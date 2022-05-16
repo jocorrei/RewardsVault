@@ -8,6 +8,7 @@ contract LockRewards is ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     error InsufficientAmount();
+    error FundsInLockPeriod();
 
     struct Account {
         uint256 balance;
@@ -25,11 +26,22 @@ contract LockRewards is ReentrancyGuard {
         uint256 rewardPerToken1;
     }
 
+    // Mapping to a struct, the end or start date is the 
+    // key and the struct has the info to distribute rewards
+    struct Epoch {
+        uint256 start;
+        uint256 finish;
+        uint256 epoch;
+        bool    status;
+    }
+
+    // Array to store the rewards paid, account has an index in which tells where to for loop
     address public lockToken;
     address public rewardToken1;
     address public rewardToken2;
     uint256 public epoch = 7 days;
     
+    Epoch public currentEpoch;
     Total public total;
     mapping(address => Account) public accounts;
 
@@ -96,25 +108,31 @@ contract LockRewards is ReentrancyGuard {
 
     /* ========== MUTATIVE FUNCTIONS ========== */
 
-    function deposit(uint256 amount, uint256 lockTime) public nonReentrant updateReward(msg.sender) {
-        if (amount <= 0) revert InsufficientAmount();
-        IERC20 lToken = IERC20(lockToken);
+    // function deposit(uint256 amount, uint256 lockTime) public nonReentrant updateReward(msg.sender) {
+    //     if (amount <= 0) revert InsufficientAmount();
+    //     IERC20 lToken = IERC20(lockToken);
+    //     uint256 unlockDate = accounts[msg.sender].lockDate + accounts[msg.sender].lockPeriod;
+    //     uint256 newUnlockdate = block.timestamp + lockTime;
 
-        accounts[msg.sender].balance += amount;
-        if 
-        accounts[msg.sender].lockDate = block.timestamp;
-        total.managed += amount;
+    //     accounts[msg.sender].balance += amount;
+    //     // Ja deu ruim aqui, isso nao funciona
+    //     // Pq eu preciso quanto foi depositado e quando pra dar o valor certo de reward.
+    //     if (unlockDate < newUnlockdate) {
+    //         accounts[msg.sender].
+    //     }
+    //     accounts[msg.sender].lockDate = block.timestamp;
+    //     total.managed += amount;
         
-        // Probably not right
-        lToken.safeTransferFrom(msg.sender, address(this), amount);
-        emit LockTokens(msg.sender, amount, block.timestamp + lockTime);
-    }
+    //     // Probably not right
+    //     lToken.safeTransferFrom(msg.sender, address(this), amount);
+    //     emit LockTokens(msg.sender, amount, block.timestamp + lockTime);
+    // }
 
     function withdraw(uint256 amount) public nonReentrant updateReward(msg.sender) {
         if (amount <= 0 || accounts[msg.sender].balance < amount) revert InsufficientAmount();
         
         uint256 unlockDate = accounts[msg.sender].lockDate + accounts[msg.sender].lockPeriod;
-        if (unlockDate > block.timestamp) revert FundsLocked();
+        if (unlockDate > block.timestamp) revert FundsInLockPeriod();
 
         IERC20 lToken = IERC20(lockToken);
 
@@ -149,21 +167,17 @@ contract LockRewards is ReentrancyGuard {
 
     /* ========== RESTRICTED FUNCTIONS ========== */
 
-    function notifyRewardAmount(uint256 reward) external onlyRewardsDistribution updateReward(address(0)) {
-        if (block.timestamp >= periodFinish) {
-            rewardRate = reward.div(rewardsDuration);
-        } else {
-            uint256 remaining = periodFinish.sub(block.timestamp);
-            uint256 leftover = remaining.mul(rewardRate);
-            rewardRate = reward.add(leftover).div(rewardsDuration);
-        }
+    function setNextEpoch(uint256 reward1, uint256 reward2) external onlyRewardsDistribution updateReward(address(0)) {
+        // Check if epoch is current right now
+        // Then set the next one
+        // Calculate the reward per token for this epoch
+        // Set the epoch stuff
+        if (nextEpoch.status) revert NextEpochAlreadySet();
 
-        uint balance = rewardsToken.balanceOf(address(this));
-        require(rewardRate <= balance.div(rewardsDuration), "Provided reward too high");
-
-        lastUpdateTime = block.timestamp;
-        periodFinish = block.timestamp.add(rewardsDuration);
-        emit RewardAdded(reward);
+        nextEpoch.start = block.timestamp;
+        nextEpoch.finish = block.timestamp + epoch;
+        nextEpoch.reward1PerToken = reward1 / total.Locked;
+        nextEpoch.reward2PerToken = reward2 / total.Locked;
     }
 
     // Added to support recovering LP Rewards from other systems such as BAL to be distributed to holders
