@@ -8,6 +8,7 @@ contract LockRewards is ReentrancyGuard {
 
     error InsufficientAmount();
     error FundsInLockPeriod();
+    error InsufficientBalanceForRewards(uint256 tokenNbr, uint256 available, uint256 rewardAmount);
 
     struct Account {
         uint256 balance;
@@ -37,10 +38,10 @@ contract LockRewards is ReentrancyGuard {
     uint256 public currentEpoch = 0;
     uint256 public nextUnsetEpoch = 1;
 
+    uint256 public epochDuration = 7 days;
     address public lockToken;
     address public rewardToken1;
     address public rewardToken2;
-    uint256 public epochDuration = 7 days;
     uint256 public totalAssets;
     uint256 public totalRewards1;
     uint256 public totalRewardsPaid1;
@@ -119,6 +120,7 @@ contract LockRewards is ReentrancyGuard {
         if (accounts[msg.sender].lockEpochs > 0) revert FundsInLockPeriod(accounts[msg.sender].balance);
 
         IERC20(lockToken).safeTransfer(msg.sender, amount);
+        totalAssets -= amount;
         accounts[msg.sender].balance -= amount;
         emit Withdrawn(msg.sender, amount);
     }
@@ -148,7 +150,17 @@ contract LockRewards is ReentrancyGuard {
 
     /* ========== RESTRICTED FUNCTIONS ========== */
 
+    // Only problem here is that it can have more balance for epochs that are not due yet.
+    // But already has some kind of prevention.
     function setNextEpoch(uint256 reward1, uint256 reward2) external onlyOwner updateEpoch {
+        uint256 unclaimed1 = totalReward1 - totalRewardPaid1;
+        uint256 balance1 = IERC20(rewardToken1).balanceOf(address(this));
+        if (balance1 - unclaimed1 < reward1) revert InsufficientBalanceForRewards(1, balance1 - unclaimed1, reward1);
+        
+        uint256 unclaimed2 = totalReward2 - totalRewardPaid2;
+        uint256 balance2 = IERC20(rewardToken2).balanceOf(address(this));
+        if (balance2 - unclaimed2 < reward2) revert InsufficientBalanceForRewards(2, balance2 - unclaimed2, reward2);
+        
         uint256 next = nextUnsetEpoch;
 
         uint256 _now = block.timestamp;
@@ -158,14 +170,14 @@ contract LockRewards is ReentrancyGuard {
         } else {
             epochs[next].start = finish;
         }
-
         epochs[next].finish = epochs[next].start + epochDuration;
-        // Should check balance of contract for reward?
-        // totalRewardPaid totalRewards 
-        // availableUnclaimed = totalReward - totalRewardPaid -> balanceOf - availableUnclaimed == currentReward + allNext + the of to be setted.
+
         epochs[next].reward1 = reward1;
         epochs[next].reward2 = reward2;
         epochs[next].isSet = true;
+        
+        totalRewards1 += reward1;
+        totalRewards2 += reward2;
         
         nextUnsetEpoch += 1;
         emit SetNextReward(next, reward1, reward2, epoch[next].start, epoch[next].finish);
