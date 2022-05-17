@@ -12,9 +12,9 @@ contract LockRewards is ReentrancyGuard {
 
     struct Account {
         uint256 balance;
-        uint256 lockDate;
-        uint256 lockPeriod;
-        // uint256 lockEpochs;
+        // uint256 lockDate;
+        // uint256 lockPeriod;
+        uint256 lockEpochs;
         uint256 lastEpochPaid;
         uint256 rewards1;
         uint256 rewards2;
@@ -43,6 +43,10 @@ contract LockRewards is ReentrancyGuard {
     address public rewardToken2;
     uint256 public epochDuration = 7 days;
     uint256 public totalAssets;
+    uint256 public totalRewards1;
+    uint256 public totalRewardsPaid1;
+    uint256 public totalRewards2;
+    uint256 public totalRewardsPaid2;
     
     /* ========== CONSTRUCTOR ========== */
 
@@ -91,18 +95,14 @@ contract LockRewards is ReentrancyGuard {
 
     /* ========== MUTATIVE FUNCTIONS ========== */
 
-    // Haven't implemented relock case yet
-    // Define Deposit event
     function deposit(uint256 amount, uint256 lockTime) public nonReentrant updateEpoch updateReward(msg.sender) {
         if (amount <= 0) revert InsufficientAmount();
         IERC20 lToken = IERC20(lockToken);
         uint256 next = currentEpoch + 1;
         
-        accounts[msg.sender].lockDate = block.timestamp;
-        accounts[msg.sender].lockPeriod = lockTime;
-
         uint256 lockEpochs =  lockTime / epochDuration;
-        accounts[msg.sender].lockEpochs = lockEpochs;
+        if (accounts[msg.sender].lockEpochs < lockEpochs)
+            accounts[msg.sender].lockEpochs = lockEpochs;
         
         lToken.safeTransferFrom(msg.sender, address(this), amount);
         totalAssets += amount;
@@ -112,24 +112,17 @@ contract LockRewards is ReentrancyGuard {
             epochs[i + next].balanceLocked[msg.sender] += amount;
         }
         accounts[msg.sender].balance += amount;
-        emit Deposit(msg.sender, amount, block.timestamp + lockTime);
+        emit Deposit(msg.sender, amount, accounts[msg.sender].lockEpochs);
     }
 
-    // Old bullshit
-    // function withdraw(uint256 amount) public nonReentrant updateReward(msg.sender) {
-    //     if (amount <= 0 || accounts[msg.sender].balance < amount) revert InsufficientAmount();
-        
-    //     uint256 unlockDate = accounts[msg.sender].lockDate + accounts[msg.sender].lockPeriod;
-    //     if (unlockDate > block.timestamp) revert FundsInLockPeriod();
+    function withdraw(uint256 amount) public nonReentrant updateEpoch updateReward(msg.sender) {
+        if (amount <= 0 || accounts[msg.sender].balance < amount) revert InsufficientAmount();
+        if (accounts[msg.sender].lockEpochs > 0) revert FundsInLockPeriod(accounts[msg.sender].balance);
 
-    //     IERC20 lToken = IERC20(lockToken);
-
-    //     accounts[msg.sender].balance -= amount;
-    //     accounts[msg.sender].lockDate = 0;
-
-    //     lToken.safeTransfer(msg.sender, amount);
-    //     emit Withdrawn(msg.sender, amount);
-    // }
+        IERC20(lockToken).safeTransfer(msg.sender, amount);
+        accounts[msg.sender].balance -= amount;
+        emit Withdrawn(msg.sender, amount);
+    }
 
     function claimReward() public nonReentrant updateEpoch updateReward(msg.sender) {
         uint256 reward1 = accounts[msg.sender].reward1;
@@ -144,15 +137,15 @@ contract LockRewards is ReentrancyGuard {
         if (reward2 > 0) {
             IERC20 rToken2 = IERC20(reward2);
             account[msg.sender].reward2 = 0;
-            rToken2.safeTransfer(msg.sender, reward1);
-            emit RewardPaid(msg.sender, rewardToken2, reward1);
+            rToken2.safeTransfer(msg.sender, reward2);
+            emit RewardPaid(msg.sender, rewardToken2, reward2);
         }
     }
 
-    // function exit() external {
-    //     withdraw(_balances[msg.sender]);
-    //     getReward();
-    // }
+    function exit() external {
+        withdraw(accounts[msg.sender].balance);
+        claimReward();
+    }
 
     /* ========== RESTRICTED FUNCTIONS ========== */
 
@@ -169,12 +162,14 @@ contract LockRewards is ReentrancyGuard {
 
         epochs[next].finish = epochs[next].start + epochDuration;
         // Should check balance of contract for reward?
+        // totalRewardPaid totalRewards 
+        // availableUnclaimed = totalReward - totalRewardPaid -> balanceOf - availableUnclaimed == currentReward + allNext + the of to be setted.
         epochs[next].reward1 = reward1;
         epochs[next].reward2 = reward2;
         epochs[next].isSet = true;
         
         nextUnsetEpoch += 1;
-        emit setNextReward(next, reward1, reward2, epoch[next].start, epoch[next].finish);
+        emit SetNextReward(next, reward1, reward2, epoch[next].start, epoch[next].finish);
     }
 
     // // Added to support recovering LP Rewards from other systems such as BAL to be distributed to holders
@@ -212,10 +207,17 @@ contract LockRewards is ReentrancyGuard {
         for (int i = lastEpochPaid; i < current; i++) {
             uint256 share = epochs[i].balanceLocked[msg.sender] * 1e18 / epochs[i].totalLocked;
 
-            accounts[msg.sender].reward1 += share * epochs[i].reward1 / 1e18;
-            accounts[msg.sender].reward2 += share * epochs[i].reward2 / 1e18;
-        }
+            uint256 rewardPaid1 = share * epochs[i].reward1 / 1e18;
+            uint256 rewardPaid2 = share * epochs[i].reward2 / 1e18;
 
+            totalRewardsPaid1 += paidReward1;
+            totalRewardsPaid2 += paidReward2;
+
+            accounts[msg.sender].reward1 += paidReward1;
+            accounts[msg.sender].reward2 += paidReward2;
+            
+            accounts[msg.sender].lockEpochs -= 1;
+        }
         accounts[msg.sender].lastEpochPaid = current;
         _;
     }
@@ -224,9 +226,10 @@ contract LockRewards is ReentrancyGuard {
 
     // Create more events and delete unused ones
     event RewardAdded(uint256 reward);
-    event Staked(address indexed user, uint256 amount);
+    event Deposit(address indexed user, uint256 amount, uint256 lockedEpochs);
     event Withdrawn(address indexed user, uint256 amount);
     event RewardPaid(address indexed user, uint256 reward);
     event RewardsDurationUpdated(uint256 newDuration);
     event Recovered(address token, uint256 amount);
+    event SetNextReward(uint256 indexed epochId, uint256 reward1, uint256 reward2, uint256 start, uint256 finish);
 }
