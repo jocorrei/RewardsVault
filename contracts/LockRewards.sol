@@ -1,8 +1,7 @@
 pragma solidity ^0.8.13;
 
-import "@openzeppelin/contracts/token/ERC20/ERC20Detailed.sol";
-import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 contract LockRewards is ReentrancyGuard {
     using SafeERC20 for IERC20;
@@ -170,6 +169,22 @@ contract LockRewards is ReentrancyGuard {
         
         nextUnsetEpoch += 1;
         emit SetNextReward(next, reward1, reward2, epoch[next].start, epoch[next].finish);
+    }
+    
+    // Added to support recovering LP Rewards from other systems such as BAL to be distributed to holders
+    function recoverERC20(address tokenAddress, uint256 tokenAmount) external onlyOwner {
+        if (whitelistRecoverERC20[tokenAddress] == false) revert NotWhitelisted();
+        
+        uint balance = IERC20(tokenAddress).balanceOf(address(this));
+        if (balance < tokenAmount) revert InsufficientBalance(); 
+
+        IERC20(tokenAddress).safeTransfer(owner, tokenAmount);
+        emit Recovered(tokenAddress, tokenAmount);
+    }
+
+    function recoverERC721(address tokenAddress, uint256 tokenId) external onlyOwner {
+        IERC721(tokenAddress).safeTransferFrom(address(this), owner, tokenId);
+        emit RecoveredNFT(tokenAddress, tokenId);
     }
 
     // // Added to support recovering LP Rewards from other systems such as BAL to be distributed to holders
