@@ -9,6 +9,7 @@ contract LockRewards is ReentrancyGuard {
     error InsufficientAmount();
     error FundsInLockPeriod();
     error InsufficientBalanceForRewards(uint256 tokenNbr, uint256 available, uint256 rewardAmount);
+    // Create more errors that are already being used.
 
     struct Account {
         uint256 balance;
@@ -38,7 +39,7 @@ contract LockRewards is ReentrancyGuard {
     uint256 public currentEpoch = 0;
     uint256 public nextUnsetEpoch = 1;
 
-    uint256 public epochDuration = 7 days;
+    uint256 public maxEpochs = 7;
     address public lockToken;
     address public rewardToken1;
     address public rewardToken2;
@@ -95,23 +96,37 @@ contract LockRewards is ReentrancyGuard {
 
     /* ========== MUTATIVE FUNCTIONS ========== */
 
-    function deposit(uint256 amount, uint256 lockTime) public nonReentrant updateEpoch updateReward(msg.sender) {
+    function deposit(uint256 amount, uint256 lockEpochs) public nonReentrant updateEpoch updateReward(msg.sender) {
         if (amount <= 0) revert InsufficientAmount();
+        if (lockEpochs > maxEpochs) revert LockEpochsMax(maxEpochs);
         IERC20 lToken = IERC20(lockToken);
-        uint256 next = currentEpoch + 1;
+
+        // Check if current epoch is in course
+        // Then, set the deposit for the upcoming ones
+        uint256 next = currentEpoch;
+        if (epochs[next].isSet)
+            next += 1;
         
-        uint256 lockEpochs =  lockTime / epochDuration;
-        if (accounts[msg.sender].lockEpochs < lockEpochs)
+        // In case of a relock, set the lockEpochs to the
+        // biggest number of epochs. Starting for the next
+        // possible epoch.
+        if (accounts[msg.sender].lockEpochs < lockEpochs) {
             accounts[msg.sender].lockEpochs = lockEpochs;
+        } else {
+            lockEpochs = accounts[msg.sender].lockEpochs;
+        }
         
         lToken.safeTransferFrom(msg.sender, address(this), amount);
         totalAssets += amount;
-
-        for (uint256 i = 0; i < lockEpochs; i++) {
-            epochs[i + next].totalLocked += amount;
-            epochs[i + next].balanceLocked[msg.sender] += amount;
-        }
         accounts[msg.sender].balance += amount;
+        uint256 newBalance = accounts[msg.sender].balance;
+
+        // Since all funds will be locked for the same period
+        // Update all lock epochs for this new value
+        for (uint256 i = 0; i < lockEpochs; i++) {
+            epochs[i + next].totalLocked += newBalance - epochs[i + next].balanceLocked[msg.sender];
+            epochs[i + next].balanceLocked[msg.sender] = newBalance;
+        }
         emit Deposit(msg.sender, amount, accounts[msg.sender].lockEpochs);
     }
 
@@ -150,27 +165,25 @@ contract LockRewards is ReentrancyGuard {
 
     /* ========== RESTRICTED FUNCTIONS ========== */
 
-    // Only problem here is that it can have more balance for epochs that are not due yet.
-    // But already has some kind of prevention.
-    function setNextEpoch(uint256 reward1, uint256 reward2) external onlyOwner updateEpoch {
+    // If epoch is finished and there isn't a new to start, the contract will hold.
+    // But in that case, when the next epoch is set it'll already start.
+    function setNextEpoch(uint256 reward1, uint256 reward2, uint256 epochDurationInDays) external onlyOwner updateEpoch {
         uint256 unclaimed1 = totalReward1 - totalRewardPaid1;
         uint256 balance1 = IERC20(rewardToken1).balanceOf(address(this));
-        if (balance1 - unclaimed1 < reward1) revert InsufficientBalanceForRewards(1, balance1 - unclaimed1, reward1);
+        if (balance1 - unclaimed1 < reward1) revert InsufficientFundsForRewards(1, balance1 - unclaimed1, reward1);
         
         uint256 unclaimed2 = totalReward2 - totalRewardPaid2;
         uint256 balance2 = IERC20(rewardToken2).balanceOf(address(this));
-        if (balance2 - unclaimed2 < reward2) revert InsufficientBalanceForRewards(2, balance2 - unclaimed2, reward2);
+        if (balance2 - unclaimed2 < reward2) revert InsufficientFundsForRewards(2, balance2 - unclaimed2, reward2);
         
         uint256 next = nextUnsetEpoch;
-
-        uint256 _now = block.timestamp;
-        uint256 finish = epochs[next - 1].finish;
-        if (finish < _now) {
-            epochs[next].start = _now;
+        
+        if (currentEpoch == next) {
+            epochs[next].start = block.timestamp;
         } else {
-            epochs[next].start = finish;
+            epochs[next].start = epochs[next - 1].finish + 1;
         }
-        epochs[next].finish = epochs[next].start + epochDuration;
+        epochs[next].finish = epochs[next].start + (epochDurationInDays * 86400); // Seconds in a day
 
         epochs[next].reward1 = reward1;
         epochs[next].reward2 = reward2;
@@ -217,8 +230,6 @@ contract LockRewards is ReentrancyGuard {
 
     /* ========== MODIFIERS ========== */
     
-    // Think about edge case like the last valid epoch is due
-    // But owner wants to set new rewards again. What will happen?
     modifier updateEpoch {
         uint256 current = currentEpoch;
 
@@ -245,7 +256,8 @@ contract LockRewards is ReentrancyGuard {
             
             accounts[msg.sender].lockEpochs -= 1;
         }
-        accounts[msg.sender].lastEpochPaid = current;
+        if (lastEpochPaid != current)
+            accounts[msg.sender].lastEpochPaid = current;
         _;
     }
 
