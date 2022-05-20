@@ -211,7 +211,6 @@ contract LockRewards is ReentrancyGuard, Ownable {
     //     uint balance = IERC20(tokenAddress).balanceOf(address(this));
     //     if (balance < tokenAmount) revert InsufficientBalance(); 
 
-<<<<<<< HEAD
     // function setRewardsDuration(uint256 _rewardsDuration) external onlyOwner {
     //     require(
     //         block.timestamp > periodFinish,
@@ -219,7 +218,6 @@ contract LockRewards is ReentrancyGuard, Ownable {
     //     );
     //     rewardsDuration = _rewardsDuration;
     //     emit RewardsDurationUpdated(rewardsDuration);
-=======
     //     IERC20(tokenAddress).safeTransfer(owner, tokenAmount);
     //     emit Recovered(tokenAddress, tokenAmount);
     // }
@@ -227,7 +225,6 @@ contract LockRewards is ReentrancyGuard, Ownable {
     // function recoverERC721(address tokenAddress, uint256 tokenId) external onlyOwner {
     //     IERC721(tokenAddress).safeTransferFrom(address(this), owner, tokenId);
     //     emit RecoveredNFT(tokenAddress, tokenId);
->>>>>>> 91a080aa3eacf87cf9b01a1cb4b7358587cf27d0
     // }
     
     /* ========== INTERNAL FUNCTIONS ========== */
