@@ -2,6 +2,7 @@
 pragma solidity ^0.8.13;
 
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
@@ -11,8 +12,9 @@ contract LockRewards is ReentrancyGuard, Ownable {
     error InsufficientAmount();
     error InsufficientBalance();
     error FundsInLockPeriod(uint256 balance);
-    error InsufficientFundsForRewards(uint256 tokenNbr, uint256 available, uint256 rewardAmount);
+    error InsufficientFundsForRewards(address token, uint256 available, uint256 rewardAmount);
     error LockEpochsMax(uint256 maxEpochs);
+    error NotWhitelisted();
     
     struct Account {
         uint256 balance;
@@ -40,7 +42,6 @@ contract LockRewards is ReentrancyGuard, Ownable {
         uint256 rewards;
         uint256 rewardsPaid;
     }
-
     
     /* ========== STATE VARIABLES ========== */
 
@@ -49,23 +50,27 @@ contract LockRewards is ReentrancyGuard, Ownable {
     uint256 public currentEpoch = 1;
     uint256 public nextUnsetEpoch = 1;
     uint256 public totalAssets;
+    bool public enforceTime = true;
 
     uint256 public maxEpochs;
     address public lockToken;
     RewardToken[2] public rewardToken;
+
+    mapping(address => bool) public whitelistRecoverERC20;
     
     // TODO
-    // Enforce time with change option and emit event
     // Views -> balanceOf, allowance, lockEpochs, currentEpoch, nextSet, reward per epoch, balanceOfEpoch (general and for account),
     // totalLocked, totalLocked per epoch
-    // Functions -> Change maxEpochs, 
-    // Whitelist ERC20 recover with event to whitelist token
-    // Also the recover ERC721
     /* ========== CONSTRUCTOR ========== */
 
     // Owner is the deployer
     // To change it call transferOwnership
-    constructor(address _lockToken, address _rewardAddr1, address _rewardAddr2, uint256 _maxEpochs) {
+    constructor(
+        address _lockToken,
+        address _rewardAddr1,
+        address _rewardAddr2,
+        uint256 _maxEpochs
+    ) {
         lockToken = _lockToken;
         rewardToken[0].addr  = _rewardAddr1;  
         rewardToken[1].addr  = _rewardAddr2;  
@@ -106,11 +111,10 @@ contract LockRewards is ReentrancyGuard, Ownable {
 
     /* ========== MUTATIVE FUNCTIONS ========== */
 
-    function deposit(uint256 amount, uint256 lockEpochs)
-        external
-        nonReentrant
-        updateEpoch 
-        updateReward(msg.sender) {
+    function deposit(
+        uint256 amount,
+        uint256 lockEpochs
+    ) external nonReentrant updateEpoch updateReward(msg.sender) {
         if (amount <= 0) revert InsufficientAmount();
         if (lockEpochs > maxEpochs) revert LockEpochsMax(maxEpochs);
         IERC20 lToken = IERC20(lockToken);
@@ -144,20 +148,13 @@ contract LockRewards is ReentrancyGuard, Ownable {
         emit Deposit(msg.sender, amount, accounts[msg.sender].lockEpochs);
     }
 
-    function withdraw(uint256 amount)
-        external
-        nonReentrant
-        updateEpoch
-        updateReward(msg.sender) {
+    function withdraw(
+        uint256 amount
+    ) external nonReentrant updateEpoch updateReward(msg.sender) {
         _withdraw(amount);
     }
 
-    function claimReward()
-        external
-        nonReentrant
-        updateEpoch
-        updateReward(msg.sender)
-        returns(uint256, uint256) {
+    function claimReward() external nonReentrant updateEpoch updateReward(msg.sender) returns(uint256, uint256) {
         return _claim();
     }
 
@@ -182,7 +179,7 @@ contract LockRewards is ReentrancyGuard, Ownable {
             uint256 balance = IERC20(rewardToken[i].addr).balanceOf(address(this));
             
             if (balance - unclaimed < rewards[i])
-                revert InsufficientFundsForRewards(i, balance - unclaimed, rewards[i]);
+                revert InsufficientFundsForRewards(rewardToken[i].addr, balance - unclaimed, rewards[i]);
             
             rewardToken[i].rewards += rewards[i];
         }
@@ -204,34 +201,44 @@ contract LockRewards is ReentrancyGuard, Ownable {
         emit SetNextReward(next, reward1, reward2, epochs[next].start, epochs[next].finish);
     }
     
-    // Added to support recovering LP Rewards from other systems such as BAL to be distributed to holders
-    // function recoverERC20(address tokenAddress, uint256 tokenAmount) external onlyOwner {
-    //     if (whitelistRecoverERC20[tokenAddress] == false) revert NotWhitelisted();
+    function recoverERC20(address tokenAddress, uint256 tokenAmount) external onlyOwner {
+        if (whitelistRecoverERC20[tokenAddress] == false) revert NotWhitelisted();
         
-    //     uint balance = IERC20(tokenAddress).balanceOf(address(this));
-    //     if (balance < tokenAmount) revert InsufficientBalance(); 
+        uint balance = IERC20(tokenAddress).balanceOf(address(this));
+        if (balance < tokenAmount) revert InsufficientBalance(); 
 
-    // function setRewardsDuration(uint256 _rewardsDuration) external onlyOwner {
-    //     require(
-    //         block.timestamp > periodFinish,
-    //         "Previous rewards period must be complete before changing the duration for the new period"
-    //     );
-    //     rewardsDuration = _rewardsDuration;
-    //     emit RewardsDurationUpdated(rewardsDuration);
-    //     IERC20(tokenAddress).safeTransfer(owner, tokenAmount);
-    //     emit Recovered(tokenAddress, tokenAmount);
-    // }
+        IERC20(tokenAddress).safeTransfer(owner(), tokenAmount);
+        emit RecoveredERC20(tokenAddress, tokenAmount);
+    }
 
-    // function recoverERC721(address tokenAddress, uint256 tokenId) external onlyOwner {
-    //     IERC721(tokenAddress).safeTransferFrom(address(this), owner, tokenId);
-    //     emit RecoveredNFT(tokenAddress, tokenId);
-    // }
+    function changeRecoverWhitelist(address tokenAddress, bool flag) external onlyOwner {
+        whitelistRecoverERC20[tokenAddress] = flag;
+        emit ChangeERC20Whiltelist(tokenAddress, flag);
+    }
+
+    function recoverERC721(address tokenAddress, uint256 tokenId) external onlyOwner {
+        IERC721(tokenAddress).transferFrom(address(this), owner(), tokenId);
+        emit RecoveredERC721(tokenAddress, tokenId);
+    }
+
+    function changeEnforceTime(bool flag) external onlyOwner {
+        enforceTime = flag;
+        emit ChangeEnforceTime(block.timestamp, flag);
+    }
+
+    function changeMaxEpochs(uint256 _maxEpochs) external onlyOwner {
+        uint256 oldEpochs = maxEpochs;
+        maxEpochs = _maxEpochs;
+        emit ChangeMaxLockEpochs(block.timestamp, oldEpochs, _maxEpochs);
+    }
     
     /* ========== INTERNAL FUNCTIONS ========== */
     
-    function _withdraw(uint256 amount) internal {
+    function _withdraw(
+        uint256 amount
+    ) internal {
         if (amount <= 0 || accounts[msg.sender].balance < amount) revert InsufficientAmount();
-        if (accounts[msg.sender].lockEpochs > 0) revert FundsInLockPeriod(accounts[msg.sender].balance);
+        if (accounts[msg.sender].lockEpochs > 0 && enforceTime) revert FundsInLockPeriod(accounts[msg.sender].balance);
 
         IERC20(lockToken).safeTransfer(msg.sender, amount);
         totalAssets -= amount;
@@ -246,12 +253,12 @@ contract LockRewards is ReentrancyGuard, Ownable {
         if (reward1 > 0) {
             accounts[msg.sender].rewards1 = 0;
             IERC20(rewardToken[0].addr).safeTransfer(msg.sender, reward1);
-            emit RewardPaid(msg.sender, 0, reward1);
+            emit RewardPaid(msg.sender, rewardToken[0].addr, reward1);
         }
         if (reward2 > 0) {
             accounts[msg.sender].rewards2 = 0;
             IERC20(rewardToken[1].addr).safeTransfer(msg.sender, reward2);
-            emit RewardPaid(msg.sender, 1, reward2);
+            emit RewardPaid(msg.sender, rewardToken[1].addr, reward2);
         }
         return (reward1, reward2);
     }
@@ -292,11 +299,13 @@ contract LockRewards is ReentrancyGuard, Ownable {
     /* ========== EVENTS ========== */
 
     // Create more events and delete unused ones
-    event RewardAdded(uint256 reward);
     event Deposit(address indexed user, uint256 amount, uint256 lockedEpochs);
     event Withdrawn(address indexed user, uint256 amount);
-    event RewardPaid(address indexed user, uint256 tokenNbr, uint256 reward);
-    event RewardsDurationUpdated(uint256 newDuration);
-    event Recovered(address token, uint256 amount);
+    event RewardPaid(address indexed user, address token, uint256 reward);
     event SetNextReward(uint256 indexed epochId, uint256 reward1, uint256 reward2, uint256 start, uint256 finish);
+    event RecoveredERC20(address token, uint256 amount);
+    event RecoveredERC721(address token, uint256 tokenId);
+    event ChangeERC20Whiltelist(address token, bool tokenState);
+    event ChangeEnforceTime(uint256 indexed currentTime, bool flag);
+    event ChangeMaxLockEpochs(uint256 indexed currentTime, uint256 oldEpochs, uint256 newEpochs);
 }
