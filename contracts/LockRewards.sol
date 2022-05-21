@@ -18,8 +18,6 @@ contract LockRewards is ReentrancyGuard, Ownable {
     
     struct Account {
         uint256 balance;
-        // uint256 lockDate;
-        // uint256 lockPeriod;
         uint256 lockEpochs;
         uint256 lastEpochPaid;
         uint256 rewards1;
@@ -34,7 +32,6 @@ contract LockRewards is ReentrancyGuard, Ownable {
         uint256 rewards1;
         uint256 rewards2;
         bool    isSet;
-        // bool    isCurrent;
     }
 
     struct RewardToken {
@@ -50,7 +47,7 @@ contract LockRewards is ReentrancyGuard, Ownable {
     uint256 public currentEpoch = 1;
     uint256 public nextUnsetEpoch = 1;
     uint256 public totalAssets;
-    bool public enforceTime = true;
+    bool    public enforceTime = true;
 
     uint256 public maxEpochs;
     address public lockToken;
@@ -58,9 +55,6 @@ contract LockRewards is ReentrancyGuard, Ownable {
 
     mapping(address => bool) public whitelistRecoverERC20;
     
-    // TODO
-    // Views -> balanceOf, allowance, lockEpochs, currentEpoch, nextSet, reward per epoch, balanceOfEpoch (general and for account),
-    // totalLocked, totalLocked per epoch
     /* ========== CONSTRUCTOR ========== */
 
     // Owner is the deployer
@@ -78,39 +72,78 @@ contract LockRewards is ReentrancyGuard, Ownable {
     }
 
     /* ========== VIEWS ========== */
+    
+    function balanceOf(address owner) external view returns (uint256) {
+        return accounts[owner].balance;
+    }
 
-    // function totalSupply() external view returns (uint256) {
-    //     return _totalSupply;
-    // }
+    function balanceOfInEpoch(address owner, uint256 epochId) external view returns (uint256) {
+        return epochs[epochId].balanceLocked[owner];
+    }
 
-    // function balanceOf(address account) external view returns (uint256) {
-    //     return _balances[account];
-    // }
+    function totalLocked() external view returns (uint256) {
+        return totalAssets;
+    }
 
-    // function lastTimeRewardApplicable() public view returns (uint256) {
-    //     return block.timestamp < periodFinish ? block.timestamp : periodFinish;
-    // }
+    function getCurrentEpoch() external view returns (
+        uint256 start,
+        uint256 finish,
+        uint256 locked,
+        uint256 rewards1,
+        uint256 rewards2,
+        bool    isSet
+    ) {
+        return _getEpoch(currentEpoch);
+    }
 
-    // function rewardPerToken() public view returns (uint256) {
-    //     if (_totalSupply == 0) {
-    //         return rewardPerTokenStored;
-    //     }
-    //     return
-    //         rewardPerTokenStored.add(
-    //             lastTimeRewardApplicable().sub(lastUpdateTime).mul(rewardRate).mul(1e18).div(_totalSupply)
-    //         );
-    // }
+    function getNextEpoch() external view returns (
+        uint256 start,
+        uint256 finish,
+        uint256 locked,
+        uint256 rewards1,
+        uint256 rewards2,
+        bool    isSet
+    ) {
+        if (currentEpoch == nextUnsetEpoch) 
+            return (0, 0, 0, 0, 0, false);
+        return _getEpoch(currentEpoch + 1);
+    }
 
-    // function earned(address account) public view returns (uint256) {
-    //     return _balances[account].mul(rewardPerToken().sub(userRewardPerTokenPaid[account])).div(1e18).add(rewards[account]);
-    // }
-
-    // function getRewardForDuration() external view returns (uint256) {
-    //     return rewardRate.mul(rewardsDuration);
-    // }
-
+    function getEpoch(uint256 epochId) external view returns (
+        uint256 start,
+        uint256 finish,
+        uint256 locked,
+        uint256 rewards1,
+        uint256 rewards2,
+        bool    isSet
+    ) {
+        return _getEpoch(epochId);
+    }
+    
+    function getAccount(
+        address owner
+    ) internal view returns (
+        uint256 balance,
+        uint256 lockEpochs,
+        uint256 lastEpochPaid,
+        uint256 rewards1,
+        uint256 rewards2
+    ) {
+        return _getAccount(owner);
+    }
+    
     /* ========== MUTATIVE FUNCTIONS ========== */
 
+    function updateAccount() external updateEpoch updateReward(msg.sender) returns (
+        uint256 balance,
+        uint256 lockEpochs,
+        uint256 lastEpochPaid,
+        uint256 rewards1,
+        uint256 rewards2
+    ) {
+        return _getAccount(msg.sender);
+    }
+    
     function deposit(
         uint256 amount,
         uint256 lockEpochs
@@ -261,6 +294,42 @@ contract LockRewards is ReentrancyGuard, Ownable {
             emit RewardPaid(msg.sender, rewardToken[1].addr, reward2);
         }
         return (reward1, reward2);
+    }
+    
+    function _getAccount(
+        address owner
+    ) internal view returns (
+        uint256 balance,
+        uint256 lockEpochs,
+        uint256 lastEpochPaid,
+        uint256 rewards1,
+        uint256 rewards2
+    ) {
+        return (
+            accounts[owner].balance,
+            accounts[owner].lockEpochs,
+            accounts[owner].lastEpochPaid,
+            accounts[owner].rewards1,
+            accounts[owner].rewards2
+        );
+    }
+    
+    function _getEpoch(uint256 epochId) internal view returns (
+        uint256 start,
+        uint256 finish,
+        uint256 locked,
+        uint256 rewards1,
+        uint256 rewards2,
+        bool    isSet
+    ) {
+        return (
+            epochs[epochId].start, 
+            epochs[epochId].finish,
+            epochs[epochId].totalLocked,
+            epochs[epochId].rewards1,
+            epochs[epochId].rewards2,
+            epochs[epochId].isSet
+            );
     }
 
     /* ========== MODIFIERS ========== */
