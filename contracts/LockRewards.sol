@@ -6,40 +6,11 @@ import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-contract LockRewards is ReentrancyGuard, Ownable {
+import "./interfaces/ILockRewards.sol";
+
+contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
     using SafeERC20 for IERC20;
 
-    error InsufficientAmount();
-    error InsufficientBalance();
-    error FundsInLockPeriod(uint256 balance);
-    error InsufficientFundsForRewards(address token, uint256 available, uint256 rewardAmount);
-    error LockEpochsMax(uint256 maxEpochs);
-    error NotWhitelisted();
-    
-    struct Account {
-        uint256 balance;
-        uint256 lockEpochs;
-        uint256 lastEpochPaid;
-        uint256 rewards1;
-        uint256 rewards2;
-    }
-
-    struct Epoch {
-        mapping(address => uint256) balanceLocked;
-        uint256 start;
-        uint256 finish;
-        uint256 totalLocked;
-        uint256 rewards1;
-        uint256 rewards2;
-        bool    isSet;
-    }
-
-    struct RewardToken {
-        address addr;
-        uint256 rewards;
-        uint256 rewardsPaid;
-    }
-    
     /* ========== STATE VARIABLES ========== */
 
     mapping(address => Account) public accounts;
@@ -122,7 +93,7 @@ contract LockRewards is ReentrancyGuard, Ownable {
     
     function getAccount(
         address owner
-    ) internal view returns (
+    ) external view returns (
         uint256 balance,
         uint256 lockEpochs,
         uint256 lastEpochPaid,
@@ -364,17 +335,4 @@ contract LockRewards is ReentrancyGuard, Ownable {
             accounts[msg.sender].lastEpochPaid = current;
         _;
     }
-
-    /* ========== EVENTS ========== */
-
-    // Create more events and delete unused ones
-    event Deposit(address indexed user, uint256 amount, uint256 lockedEpochs);
-    event Withdrawn(address indexed user, uint256 amount);
-    event RewardPaid(address indexed user, address token, uint256 reward);
-    event SetNextReward(uint256 indexed epochId, uint256 reward1, uint256 reward2, uint256 start, uint256 finish);
-    event RecoveredERC20(address token, uint256 amount);
-    event RecoveredERC721(address token, uint256 tokenId);
-    event ChangeERC20Whiltelist(address token, bool tokenState);
-    event ChangeEnforceTime(uint256 indexed currentTime, bool flag);
-    event ChangeMaxLockEpochs(uint256 indexed currentTime, uint256 oldEpochs, uint256 newEpochs);
 }
