@@ -8,28 +8,52 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 
 import "./interfaces/ILockRewards.sol";
 
+/** @title Lock tokens and receive rewards in
+ * 2 different tokens
+ *  @author gcontarini jocorrei
+ *  @notice The locking mechanism is based on epochs.
+ * How long each epoch is going to last is up to the
+ * contract owner to decide when setting an epoch with
+ * the amount of rewards needed. To receive rewards, the
+ * funds must be locked before the epoch start and will
+ * become claimable at the epoch end. Relocking with 
+ * more tokens increases the amount received moving forward.
+ * But it also can relock ALL funds for longer periods.
+ *  @dev Contract follows a simple owner access control implemented
+ * by the Ownable contract. The contract deployer is the owner at 
+ * start.
+ */
 contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
     using SafeERC20 for IERC20;
 
-    /* ========== STATE VARIABLES ========== */
-
+    /// @dev Account hold all user information 
     mapping(address => Account) public accounts;
+    /// @dev Total amount of lockTokes that the contract holds
+    uint256 public totalAssets;
+    address public lockToken;
+    /// @dev Hold all rewardToken information like token address
+    RewardToken[2] public rewardToken;
+    
+    /// @dev If false, allows users to withdraw their tokens before the locking end period
+    bool    public enforceTime = true;
+    
+    /// @dev Hold all epoch information like rewards and balance locked for each user
     mapping(uint256 => Epoch) public epochs;
     uint256 public currentEpoch = 1;
     uint256 public nextUnsetEpoch = 1;
-    uint256 public totalAssets;
-    bool    public enforceTime = true;
-
     uint256 public maxEpochs;
-    address public lockToken;
-    RewardToken[2] public rewardToken;
 
+    /// @dev Contract owner can whitelist an ERC20 token and withdraw its funds
     mapping(address => bool) public whitelistRecoverERC20;
     
-    /* ========== CONSTRUCTOR ========== */
-
-    // Owner is the deployer
-    // To change it call transferOwnership
+    /**
+     *  @notice maxEpochs can be changed afterwards by the contract owner
+     *  @dev Owner is the deployer
+     *  @param _lockToken: token address which users can deposit to receive rewards
+     *  @param _rewardAddr1: token address used to pay users rewards
+     *  @param _rewardAddr2: token address used to pay users rewards
+     *  @param _maxEpochs: max number of epochs an user can lock its funds 
+     */
     constructor(
         address _lockToken,
         address _rewardAddr1,
@@ -44,18 +68,38 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
 
     /* ========== VIEWS ========== */
     
+    /**
+     *  @notice Total deposited for address in lockTokens
+     *  @dev Show the total balance, not necessary it's all locked
+     *  @param owner: user address
+     *  @return balance: total balance of address
+     */
     function balanceOf(address owner) external view returns (uint256) {
         return accounts[owner].balance;
     }
 
+    /**
+     *  @notice Shows the total of tokens locked in an epoch for an user
+     *  @param owner: user address
+     *  @param epochId: the epoch number
+     *  @return balance: total of tokens locked for an epoch 
+     */
     function balanceOfInEpoch(address owner, uint256 epochId) external view returns (uint256) {
         return epochs[epochId].balanceLocked[owner];
     }
 
+    /**
+     *  @notice Total assets that contract holds
+     *  @dev Not all tokens are actually locked
+     *  @return totalAssets: amount of lock Tokens deposit in this contract
+     */
     function totalLocked() external view returns (uint256) {
         return totalAssets;
     }
 
+    /**
+     *  @notice Show all information for on going epoch
+     */
     function getCurrentEpoch() external view returns (
         uint256 start,
         uint256 finish,
@@ -67,6 +111,10 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
         return _getEpoch(currentEpoch);
     }
 
+    /**
+     *  @notice Show all information for next epoch
+     *  @dev If next epoch is not set, return all zeros and nulls
+     */
     function getNextEpoch() external view returns (
         uint256 start,
         uint256 finish,
@@ -80,6 +128,11 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
         return _getEpoch(currentEpoch + 1);
     }
 
+    /** 
+     *  @notice Show information for a given epoch
+     *  @dev Start and finish values are seconds 
+     *  @param epochId: number of epoch
+     */
     function getEpoch(uint256 epochId) external view returns (
         uint256 start,
         uint256 finish,
@@ -91,6 +144,12 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
         return _getEpoch(epochId);
     }
     
+    /** 
+     *  @notice Show information for an account 
+     *  @dev LastEpochPaid tell when was the last epoch in each
+     * this accounts was updated, which means receive rewards. 
+     *  @param owner: address for account 
+     */
     function getAccount(
         address owner
     ) external view returns (
@@ -114,12 +173,11 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
     ) {
         return _getAccount(msg.sender);
     }
-    
+
     function deposit(
         uint256 amount,
         uint256 lockEpochs
     ) external nonReentrant updateEpoch updateReward(msg.sender) {
-        if (amount <= 0) revert InsufficientAmount();
         if (lockEpochs > maxEpochs) revert LockEpochsMax(maxEpochs);
         IERC20 lToken = IERC20(lockToken);
 
@@ -138,9 +196,18 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
             lockEpochs = accounts[msg.sender].lockEpochs;
         }
         
-        lToken.safeTransferFrom(msg.sender, address(this), amount);
-        totalAssets += amount;
-        accounts[msg.sender].balance += amount;
+        // This is done to save gas in case of a relock
+        // Also, emits a different event for deposit or relock
+        if (amount > 0) {
+            lToken.safeTransferFrom(msg.sender, address(this), amount);
+            totalAssets += amount;
+            accounts[msg.sender].balance += amount;
+        
+            emit Deposit(msg.sender, amount, accounts[msg.sender].lockEpochs);
+        } else {
+            emit Relock(msg.sender, accounts[msg.sender].balance, accounts[msg.sender].lockEpochs);
+        }
+        
         uint256 newBalance = accounts[msg.sender].balance;
 
         // Since all funds will be locked for the same period
@@ -149,7 +216,6 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
             epochs[i + next].totalLocked += newBalance - epochs[i + next].balanceLocked[msg.sender];
             epochs[i + next].balanceLocked[msg.sender] = newBalance;
         }
-        emit Deposit(msg.sender, amount, accounts[msg.sender].lockEpochs);
     }
 
     function withdraw(
