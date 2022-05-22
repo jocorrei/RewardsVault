@@ -155,6 +155,26 @@ describe("Rewards contract test", function () {
         );
     };
 
+    // Tests for the constructor
+    describe("Testing constructor", async () => {        
+        before(initialize);
+        it("onwer should be the deployer", async () => {
+            expect(await lockRewards.owner()).to.be.equal(address(owner))
+        }),
+        it("rewards token 0 should be NewO token ", async () => {
+            let rewardZeroAddress = await lockRewards.rewardToken(0);
+            expect(rewardZeroAddress.addr).to.be.equal(newoTokenAddress)
+        }),
+        it("rewards token 1 should be WETH", async () => {
+            let rewardOneAddress = await lockRewards.rewardToken(1);
+            expect(rewardOneAddress.addr).to.be.equal(WethAddress);
+        }),
+        it("max epoch should be 4 and current epoch should be 1", async () => {
+            expect(await lockRewards.currentEpoch()).to.be.equal(1)
+            expect(await lockRewards.maxEpochs()).to.be.equal(4)
+        })
+    })
+
     // Tests for view functions
     describe("Testing view functions", async () => {        
         before(initialize);
@@ -167,7 +187,7 @@ describe("Rewards contract test", function () {
             expect(await lockRewards
                 .balanceOf(address(addr1))
             ).to.be.equal(parseNewo(10))
-        }),
+        })
         it("balanceOfinEpoch should return the balance of an specific epoch", async () => {
             expect(await lockRewards
                 .balanceOfInEpoch(address(addr1), 1)
@@ -246,25 +266,15 @@ describe("Rewards contract test", function () {
             expect(epochTwoInfo.rewards1).to.be.equal(0)
             expect(epochTwoInfo.rewards2).to.be.equal(0)
         })
+        it("getAccount should return right information about an account", async () => {
+            const newoLocked = parseNewo(10)
+            const addr1Info = await lockRewards.getAccount(address(addr1));
 
-    })
-
-    describe("Testing constructor", async () => {        
-        before(initialize);
-        it("onwer should be the deployer", async () => {
-            expect(await lockRewards.owner()).to.be.equal(address(owner))
-        }),
-        it("rewards token 0 should be NewO token ", async () => {
-            let rewardZeroAddress = await lockRewards.rewardToken(0);
-            expect(rewardZeroAddress.addr).to.be.equal(newoTokenAddress)
-        }),
-        it("rewards token 1 should be WETH", async () => {
-            let rewardOneAddress = await lockRewards.rewardToken(1);
-            expect(rewardOneAddress.addr).to.be.equal(WethAddress);
-        }),
-        it("max epoch should be 4 and current epoch should be 1", async () => {
-            expect(await lockRewards.currentEpoch()).to.be.equal(1)
-            expect(await lockRewards.maxEpochs()).to.be.equal(4)
+            expect(addr1Info.lockEpochs).to.be.equal(1)
+            expect(addr1Info.lastEpochPaid).to.be.equal(1)
+            expect(addr1Info.balance).to.be.equal(newoLocked)
+            expect(addr1Info.rewards1).to.be.equal(0)
+            expect(addr1Info.rewards2).to.be.equal(0)
         })
     })
 
@@ -359,17 +369,56 @@ describe("Rewards contract test", function () {
 
     describe("Testing lock and relock", async () => {        
         before(initialize);
+        it("locking for more than max epochs should revert", async () => {
+            const newoToLock = parseNewo(200)
+            
+            await expect(lockRewards
+                .connect(addr1)
+                .deposit(newoToLock, 5)
+            ).to.be.revertedWith("LockEpochsMax")
+        })
+        it("locking should transfer tokens from addr1 to the contract", async () => {
+            const newoToLock = parseNewo(200)
+            
+            await lockRewards
+                .connect(addr1)
+                .deposit(newoToLock, 1)
+            
+            expect(await newoToken
+                .balanceOf(address(lockRewards))
+            ).to.be.equal(newoToLock)
+        })
+        it("locking should update account balance info", async () => {
+            const accountInfo = await lockRewards.getAccount(address(addr1))
+            expect(accountInfo.balance).to.be.equal(parseNewo(200))
+        })
+        it("relocking should update epochs info (user relock for more epochs) ", async () => {
+            const newoToLock = parseNewo(200)
+            
+            await lockRewards
+                .connect(addr1)
+                .deposit(newoToLock, 2)
+            
+            const accountInfo = await lockRewards.getAccount(address(addr1))
+            
+            expect(accountInfo.balance).to.be.equal(parseNewo(400))
+
+            const epochOneInfo = await lockRewards.getEpoch(1)
+            const epochTwoInfo = await lockRewards.getEpoch(2)
+            const epochThreeInfo = await lockRewards.getEpoch(3)
+
+            expect(await lockRewards.totalAssets()).to.be.equal(parseNewo(400))
+            expect(epochOneInfo.locked).to.be.equal(parseNewo(400))
+            expect(epochTwoInfo.locked).to.be.equal(parseNewo(400))
+            expect(epochThreeInfo.locked).to.be.equal(parseNewo(0))
+        })
     })
     
-    describe("Testing rewards distribution", async () => {        
+    describe("Testing rewards distribution", async () => {
         before(initialize);
     })
     
     describe("Testing withdraw", async () => {        
-        before(initialize);
-    })
-
-    describe("Testing ownership", async () => {        
         before(initialize);
     })
 

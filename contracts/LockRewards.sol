@@ -255,20 +255,9 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
 
     /* ========== RESTRICTED FUNCTIONS ========== */
 
-    /**
-     *  @notice Set a new epoch. The amount needed of tokens
-     * should be transfered before calling setNextEpoch. 
-     *  @dev If epoch is finished and there isn't a new to start,
-     * the contract will hold. But in that case, when the next 
-     * epoch is set it'll already start (meaning: start will be
-     * the current block timestamp).
-     *  @param reward1: the amount of rewards to be distributed
-     * in token 1 for this epoch
-     *  @param reward2: the amount of rewards to be distributed
-     * in token 2 for this epoch
-     *  @param epochDurationInDays: how long the epoch will last
-     * in days as the same suggests.
-     */
+    // CONTINUE FROM HERE
+    // If epoch is finished and there isn't a new to start, the contract will hold.
+    // But in that case, when the next epoch is set it'll already start (meaning: start will be the current block timestamp).
     function setNextEpoch(
         uint256 reward1,
         uint256 reward2,
@@ -303,13 +292,6 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
         emit SetNextReward(next, reward1, reward2, epochs[next].start, epochs[next].finish);
     }
     
-    /**
-     *  @notice To recover ERC20 sent by accident.
-     * All funds are only transfered to contract owner.
-     *  @dev To allow a withdraw, first the token must be whilisted
-     *  @param tokenAddress: token to transfer funds
-     *  @param tokenAmount: the amount to transfer to owner
-     */
     function recoverERC20(address tokenAddress, uint256 tokenAmount) external onlyOwner {
         if (whitelistRecoverERC20[tokenAddress] == false) revert NotWhitelisted();
         
@@ -320,48 +302,21 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
         emit RecoveredERC20(tokenAddress, tokenAmount);
     }
 
-    /**
-     *  @notice  Add or remove a token from recover whitelist
-     *  @dev Only contract owner are allowed. Emits an event
-     * allowing users to perceive the changes in contract rules.
-     * The contract allows to whitelist the underlying tokens
-     * (both lock token and rewards tokens). This can be exploited
-     * by the owner to remove all funds deposited from all users.
-     * This is done bacause the owner is mean to be a multisig or
-     * treasury wallet from a DAO
-     *  @param flag: set true to allow recover
-     */
     function changeRecoverWhitelist(address tokenAddress, bool flag) external onlyOwner {
         whitelistRecoverERC20[tokenAddress] = flag;
         emit ChangeERC20Whiltelist(tokenAddress, flag);
     }
 
-    /**
-     *  @notice Allows recover for NFTs as well 
-     */
     function recoverERC721(address tokenAddress, uint256 tokenId) external onlyOwner {
         IERC721(tokenAddress).transferFrom(address(this), owner(), tokenId);
         emit RecoveredERC721(tokenAddress, tokenId);
     }
 
-    /**
-     *  @notice Allows owner change rule to allow users' withdraw
-     * before the lock period is over
-     *  @dev In case a major flaw, do this to prevent users from losing
-     * their funds. Also, if no more epochs are going to be setted allows 
-     * users to withdraw their assets
-     *  @param flag: set false to allow withdraws
-     */
     function changeEnforceTime(bool flag) external onlyOwner {
         enforceTime = flag;
         emit ChangeEnforceTime(block.timestamp, flag);
     }
 
-    /**
-     *  @notice Allows owner to change the max epochs an 
-     * user can lock their funds
-     *  @param _maxEpochs: new value for maxEpochs
-     */
     function changeMaxEpochs(uint256 _maxEpochs) external onlyOwner {
         uint256 oldEpochs = maxEpochs;
         maxEpochs = _maxEpochs;
@@ -370,13 +325,9 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
     
     /* ========== INTERNAL FUNCTIONS ========== */
     
-    /**
-     *  @notice Implements internal withdraw logic
-     *  @dev The withdraw is always done in name 
-     * of caller for caller
-     *  @param amount: amount of tokens to withdraw
-     */
-    function _withdraw(uint256 amount) internal {
+    function _withdraw(
+        uint256 amount
+    ) internal {
         if (amount <= 0 || accounts[msg.sender].balance < amount) revert InsufficientAmount();
         if (accounts[msg.sender].lockEpochs > 0 && enforceTime) revert FundsInLockPeriod(accounts[msg.sender].balance);
 
@@ -386,13 +337,6 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
         emit Withdrawn(msg.sender, amount);
     }
 
-    /**
-     *  @notice Implements internal claim rewards logic
-     *  @dev The claim is always done in name 
-     * of caller for caller
-     *  @return amount of rewards transfer in token 1
-     *  @return amount of rewards transfer in token 2
-     */
     function _claim() internal returns(uint256, uint256) {
         uint256 reward1 = accounts[msg.sender].rewards1;
         uint256 reward2 = accounts[msg.sender].rewards2;
@@ -410,10 +354,6 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
         return (reward1, reward2);
     }
     
-    /**
-     *  @notice Implements internal getAccount logic
-     *  @param owner: address to check information§
-     */
     function _getAccount(
         address owner
     ) internal view returns (
@@ -432,10 +372,6 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
         );
     }
     
-    /**
-     *  @notice Implements internal getEpoch logic
-     *  @param epochId: the number of the epoch
-     */
     function _getEpoch(uint256 epochId) internal view returns (
         uint256 start,
         uint256 finish,
