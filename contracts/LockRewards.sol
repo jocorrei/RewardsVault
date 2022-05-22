@@ -164,6 +164,9 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
     
     /* ========== MUTATIVE FUNCTIONS ========== */
 
+    /**
+     *  @notice Update caller account state (grant rewards if available)
+     */
     function updateAccount() external updateEpoch updateReward(msg.sender) returns (
         uint256 balance,
         uint256 lockEpochs,
@@ -174,6 +177,13 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
         return _getAccount(msg.sender);
     }
 
+    /**
+     *  @notice Deposit tokens to receive rewards
+     *  @dev Allows relocking by setting amount to zero
+     *  @param amount: the amount of lock tokens to deposit
+     *  @param lockEpochs: how many epochs to lock tokens,
+     * value must be less than maxEpochs 
+     */
     function deposit(
         uint256 amount,
         uint256 lockEpochs
@@ -208,26 +218,36 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
             emit Relock(msg.sender, accounts[msg.sender].balance, accounts[msg.sender].lockEpochs);
         }
         
-        uint256 newBalance = accounts[msg.sender].balance;
-
         // Since all funds will be locked for the same period
         // Update all lock epochs for this new value
+        uint256 newBalance = accounts[msg.sender].balance;
         for (uint256 i = 0; i < lockEpochs; i++) {
             epochs[i + next].totalLocked += newBalance - epochs[i + next].balanceLocked[msg.sender];
             epochs[i + next].balanceLocked[msg.sender] = newBalance;
         }
     }
 
+    /**
+     *  @notice Allows withdraw after lockEpochs is zero 
+     *  @param amount: tokens to caller receive
+     */
     function withdraw(
         uint256 amount
     ) external nonReentrant updateEpoch updateReward(msg.sender) {
         _withdraw(amount);
     }
 
+    /**
+     *  @notice User can receive its claimable rewards 
+     */
     function claimReward() external nonReentrant updateEpoch updateReward(msg.sender) returns(uint256, uint256) {
         return _claim();
     }
 
+    /**
+     *  @notice User withdraw all its funds and receive all available rewards 
+     *  @dev If user funds it's still locked, all transaction will revert
+     */
     function exit() external returns(uint256, uint256) {
         _withdraw(accounts[msg.sender].balance);
         return _claim();
@@ -235,6 +255,7 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
 
     /* ========== RESTRICTED FUNCTIONS ========== */
 
+    // CONTINUE FROM HERE
     // If epoch is finished and there isn't a new to start, the contract will hold.
     // But in that case, when the next epoch is set it'll already start (meaning: start will be the current block timestamp).
     function setNextEpoch(
@@ -379,12 +400,17 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
         _;
     }
 
-    modifier updateReward(address account) {
+    modifier updateReward(address owner) {
         uint256 current = currentEpoch;
-        uint256 lastEpochPaid = accounts[msg.sender].lastEpochPaid;
+        uint256 lockEpochs = accounts[owner].lockEpochs;
+        uint256 lastEpochPaid = accounts[owner].lastEpochPaid;
 
-        for (uint256 i = lastEpochPaid; i < current; i++) {
-            uint256 share = epochs[i].balanceLocked[msg.sender] * 1e18 / epochs[i].totalLocked;
+        uint256 limit = lastEpochPaid + lockEpochs; 
+        if (limit > current)
+            limit = current;
+
+        for (uint256 i = lastEpochPaid; i < limit; i++) {
+            uint256 share = epochs[i].balanceLocked[owner] * 1e18 / epochs[i].totalLocked;
 
             uint256 rewardPaid1 = share * epochs[i].rewards1 / 1e18;
             uint256 rewardPaid2 = share * epochs[i].rewards2 / 1e18;
@@ -392,13 +418,13 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
             rewardToken[0].rewardsPaid += rewardPaid1;
             rewardToken[1].rewardsPaid += rewardPaid2;
 
-            accounts[msg.sender].rewards1 += rewardPaid1;
-            accounts[msg.sender].rewards2 += rewardPaid2;
+            accounts[owner].rewards1 += rewardPaid1;
+            accounts[owner].rewards2 += rewardPaid2;
             
-            accounts[msg.sender].lockEpochs -= 1;
+            accounts[owner].lockEpochs -= 1;
         }
         if (lastEpochPaid != current)
-            accounts[msg.sender].lastEpochPaid = current;
+            accounts[owner].lastEpochPaid = current;
         _;
     }
 }
