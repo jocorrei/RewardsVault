@@ -3,7 +3,7 @@ import { ethers } from "hardhat";
 import hre = require("hardhat");
 import { 
     LockRewards__factory,
-    lockRewards,
+    LockRewards,
 } from '../typechain'
 
 import { Signer, Contract, BigNumberish, BigNumber } from "ethers";
@@ -28,13 +28,13 @@ import {
 
 const newoTokenAddress = "0x98585dFc8d9e7D48F0b1aE47ce33332CF4237D96";
 const TreasuryAddress = "0xdb36b23964FAB32dCa717c99D6AEFC9FB5748f3a";
-const WhaleAddress = "0x316c15213B097854a0c31565a0eC8705f6f9e72B";
+const WhaleAddress = "0xf8e0C93Fd48B4C34A4194d3AF436b13032E641F3";
 const WethAddress = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
 
 describe("Rewards contract test", function () {
     
     let LockRewards: LockRewards__factory;
-    let lockRewards: lockRewards;
+    let lockRewards: LockRewards;
 
     let newoToken: Contract;
     let WETH: Contract;
@@ -63,7 +63,7 @@ describe("Rewards contract test", function () {
                 {
                     forking: {
                         jsonRpcUrl: process.env.ETH_MAINFORK || "",
-                        blockNumber: 14670842,
+                        blockNumber: 14621486,
                     },
                 },
             ],
@@ -124,15 +124,10 @@ describe("Rewards contract test", function () {
 
         // veNewo deployement
         lockRewards = await LockRewards.deploy(
-            address(owner), // address owner_,
-            newoTokenAddress, // address stakingToken_,
-            days(7), // uint256 gracePeriod_,
-            days(90), // uint256 minLockTime_,
-            years(3), // uint256 maxLockTime_,
-            2, // uint256 penaltyPerc_,
-            15, // uint256 maxPenalty_,
-            5, // uint256 minPenalty_,
-            86400 // uint256 epoch_
+            newoTokenAddress, // address lockToken_,
+            newoTokenAddress, // address rewardToken0,
+            WethAddress, // address rewardToken1
+            4, // max epochs
         );
         await lockRewards.deployed();
 
@@ -142,15 +137,151 @@ describe("Rewards contract test", function () {
             .connect(treasury)
             .transfer(address(addr1), numberOfTokens
         );
+
+        // aprove Newo spending to addr1
+        await newoToken
+        .connect(addr1)
+        .approve(
+            address(lockRewards),
+            "0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        );
+
+        // aprove WETH spending to whale address§
+        await WETH
+        .connect(whale)
+        .approve(
+            address(lockRewards),
+            "0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        );
     };
 
     // Tests for view functions
-    describe("Testing fork", async () => {        
+    describe("Testing view functions", async () => {        
         before(initialize);
-        it("checking balances", async () => {
-            const { balNewo: NewoBalTest } = await checkBalances(addr1);
-            console.log(NewoBalTest);
+    })
+
+    describe("Testing constructor", async () => {        
+        before(initialize);
+        it("onwer should be the deployer", async () => {
+            expect(await lockRewards.owner()).to.be.equal(address(owner))
+        }),
+        it("rewards token 0 should be NewO token ", async () => {
+            let rewardZeroAddress = await lockRewards.rewardToken(0);
+            expect(rewardZeroAddress.addr).to.be.equal(newoTokenAddress)
+        }),
+        it("rewards token 1 should be WETH", async () => {
+            let rewardOneAddress = await lockRewards.rewardToken(1);
+            expect(rewardOneAddress.addr).to.be.equal(WethAddress);
+        }),
+        it("max epoch should be 4 and current epoch should be 1", async () => {
+            expect(await lockRewards.currentEpoch()).to.be.equal(1)
+            expect(await lockRewards.maxEpochs()).to.be.equal(4)
         })
+    })
+
+    describe("Testing SetNextEpoch", async () => {        
+        before(initialize);
+        it("SetNextEpoch should be only callable by owner", async () => {
+            await expect(lockRewards
+                .connect(addr1)
+                .setNextEpoch(1000, 1000, 7)
+            ).to.be.reverted
+        }),
+        it("SetNextEpoch should revert if there is not enought balance on the contract", async () => {
+            await expect(lockRewards
+                .connect(owner)
+                .setNextEpoch(1000, 1000, 7)
+            ).to.be.revertedWith("InsufficientFundsForRewards")
+        }),
+        it("setNextEpoch should set the first epoch correctly when called by the first time", async () => {
+            // Transfering governance tokens to the contract before setting next rewards epoch
+            await newoToken
+                .connect(treasury)
+                .transfer(address(lockRewards), parseNewo(1000))
+            
+            // Transfering WETH to the contract before setting next rewards epoch
+            await WETH
+                .connect(whale)
+                .transfer(address(lockRewards), parseWETH(10))
+            
+            await lockRewards
+                .connect(owner)
+                .setNextEpoch(10, 2, 7)
+            
+            const epochOneInfo = await lockRewards.getEpoch(1);
+            
+            // epoch should last for 7 days
+            expect((epochOneInfo.finish as BigNumber).sub(epochOneInfo.start)).to.be.equal(days(7))
+
+            // should have no tokens locked
+            expect(epochOneInfo.locked).to.be.equal(0)
+            
+            // governance tokens rewards should be 1000
+            expect(epochOneInfo.rewards1).to.be.equal(10)
+
+            // WETH tokens rewards should be 10
+            expect(epochOneInfo.rewards2).to.be.equal(2)
+        })
+        it("setNextEpoch should set the next epoch corretly when epoch one is already setted", async () => {
+            
+            await lockRewards
+                .connect(owner)
+                .setNextEpoch(100, 1, 10)
+            
+            //get info about first epoch
+            const epochOneInfo = await lockRewards.getEpoch(1)
+            
+            // get info about second epoch
+            const epochTwoInfo = await lockRewards.getEpoch(2);
+
+            // second epoch should start one second after first epoch finish
+            expect(epochTwoInfo.start).to.be.equal((epochOneInfo.finish as BigNumber).add(1))
+        
+            // second epoch should last for 10 days
+            expect((epochTwoInfo.finish as BigNumber).sub(epochTwoInfo.start)).to.be.equal(days(10))
+
+            // should have no tokens locked
+            expect(epochTwoInfo.locked).to.be.equal(0)
+            
+            // governance tokens rewards should be 100
+            expect(epochTwoInfo.rewards1).to.be.equal(100)
+
+            // WETH tokens rewards should be 2
+            expect(epochTwoInfo.rewards2).to.be.equal(1)
+        })
+        it("should not be possible to set more epochs than the max (in this case 4)", async () => {            
+            // Set third epoch
+            await lockRewards
+                .connect(owner)
+                .setNextEpoch(20, 1, 10)
+            
+            // Set forth epoch
+            await lockRewards
+                .connect(owner)
+                .setNextEpoch(20, 1, 10)
+            
+            // Set fifth epoch (this one should revert)
+            await expect(lockRewards
+                .connect(owner)
+                .setNextEpoch(20, 1, 10)
+            ).to.be.reverted
+        })
+    })
+
+    describe("Testing lock and relock", async () => {        
+        before(initialize);
+    })
+    
+    describe("Testing rewards distribution", async () => {        
+        before(initialize);
+    })
+    
+    describe("Testing withdraw", async () => {        
+        before(initialize);
+    })
+
+    describe("Testing ownership", async () => {        
+        before(initialize);
     })
 
     /**
@@ -167,7 +298,7 @@ describe("Rewards contract test", function () {
             )}`
         );
         console.log(
-            `\tbalance of USDC of ${address(signer)}: ${formatWETH(
+            `\tbalance of WETH of ${address(signer)}: ${formatWETH(
                 balWETH
             )}\n`
         );

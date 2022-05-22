@@ -32,8 +32,8 @@ const config: HardhatUserConfig = {
   solidity: "0.8.13",
   networks: {
     hardhat: {
-      gas: 2100000000000000,
-      gasPrice: 8000000000,
+      gas: 6000000,
+      gasPrice: 20000000000 ,
       forking: {
         url: process.env.ETH_MAINFORK || ""
       }
