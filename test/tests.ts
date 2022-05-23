@@ -16,7 +16,6 @@ import {
     parseToken,
     days,
     address,
-    years,
     timeTravel,
     formatToken,
 } from "./utils";
@@ -141,6 +140,14 @@ describe("Rewards contract test", function () {
         // aprove Newo spending to addr1
         await newoToken
         .connect(addr1)
+        .approve(
+            address(lockRewards),
+            "0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        );
+
+        // aprove newo spendind to addr2 
+        await newoToken
+        .connect(addr2)
         .approve(
             address(lockRewards),
             "0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
@@ -406,15 +413,17 @@ describe("Rewards contract test", function () {
     describe("Testing rewards distribution", async () => {
         before(initialize);
         it("user should not earn any reward until the end of the epoch", async () => {
-            const newoToRewards = parseNewo(100);
-            const WethToReward = parseWETH(2);
+            const newoToRewards = parseNewo(50);
+            const WethToReward = parseWETH(1);
             const durationInDays = 8;
             const newoToLock = parseNewo(10);
 
+            // user lock for one epoch
             await lockRewards.connect(addr1).deposit(newoToLock, 1);
             
             const {balNewo: balNewoBefore, balWETH: balWETHBefore} = await checkBalances(addr1)
 
+            // set rewards for epoch one
             await setRewards(newoToRewards, WethToReward, durationInDays);
 
             await timeTravel(days(2))
@@ -427,8 +436,98 @@ describe("Rewards contract test", function () {
             expect(balNewoBefore).to.be.equal(balNewoAfter)
             expect(balWETHBefore).to.be.equal(balWETHAfter)
         })
+        it("user should earn right amount of rewards if epoch is over(addr1 is the only user locked so it should earn all the rewards)", async () => {
+            const newoToRewards = parseNewo(50);
+            const WethToReward = parseWETH(1);
+            await timeTravel(days(8))
+            
+            const { balNewo: balNewoBefore, balWETH: balWETHBefore } = await checkBalances(addr1)
+
+            await lockRewards.connect(addr1).claimReward()
+
+            const { balNewo: balNewoAfter, balWETH: balWETHAfter } = await checkBalances(addr1)
+
+            expect((balNewoAfter as BigNumber).sub(balNewoBefore)).to.be.equal(newoToRewards)
+            expect((balWETHAfter as BigNumber).sub(balWETHBefore)).to.be.equal(WethToReward)
+        })
+        it("if user lock in the middle of epoch 2 he will only be able to collect rewards of epoch 3 (after is over)", async () => {
+            const newoToLock = parseNewo(100);
+            const newoToRewards = parseNewo(100);
+            const WethToReward = parseWETH(2);
+            const durationInDays = 7;
+
+            // Set second epoch. It will start automatically.
+            await setRewards(newoToRewards, WethToReward, durationInDays)
+
+            // Set third epoch. It will start in the end of second epoch
+            await setRewards(newoToRewards, WethToReward, durationInDays)
+
+            await timeTravel(days(2))
+
+            //addr1 lock for one epoch in the middle of second epoch
+            await lockRewards.connect(addr1).deposit(newoToLock, 1)
+             
+            // time travel to the middle of third epoch
+            await timeTravel(days(10))
+            
+            const { balNewo: balNewoBefore, balWETH: balWETHBefore } = await checkBalances(addr1)
+
+            // user try to claim rewards in the middle of third epoch (it should earn zero rewards)
+            await lockRewards.connect(addr1).claimReward()
+
+            const { balNewo: balNewoAfter, balWETH: balWETHAfter } = await checkBalances(addr1)
+
+            expect(balNewoBefore).to.be.equal(balNewoAfter)
+            expect(balWETHBefore).to.be.equal(balWETHAfter)
+
+            // time travel to the end of third epoch (user should be able to claim rewards now)
+            await timeTravel(days(100))
+
+            const { balNewo: balNewoBeforeClaim, balWETH: balWETHBeforeClaim } = await checkBalances(addr1)
+            
+            await lockRewards.connect(addr1).claimReward()
+
+            const { balNewo: balNewoAfterClaim, balWETH: balWETHAfterClaim } = await checkBalances(addr1)
+
+            // address should have earned all the rewards
+            expect((balNewoAfterClaim as BigNumber).sub(balNewoBeforeClaim)).to.be.equal(newoToRewards)
+            expect((balWETHAfterClaim as BigNumber).sub(balWETHBeforeClaim)).to.be.equal(WethToReward)
+        })
     })
-    
+
+    describe("Testing rewards distribution (second run)", async () => {
+        before(initialize);
+        it("user lock for 3 epochs. in the end of the third epoch he should be able to claim the rewards from all past epochs", async () => {
+            const newoToLock = parseNewo(100);
+            const newoToRewards = parseNewo(100);
+            const WethToReward = parseWETH(2);
+            const durationInDays = 10;
+
+            // deposit for 3 epochs
+            await lockRewards.connect(addr1).deposit(newoToLock, 3)
+
+            // set first epoch
+            await setRewards(newoToRewards, WethToReward, durationInDays)
+            // set second epoch
+            await setRewards(newoToRewards, WethToReward, durationInDays)
+            // set third epoch
+            await setRewards(newoToRewards, WethToReward, durationInDays)
+        
+            // time travel to after the end of the third epoch
+            await timeTravel(days(31))
+
+            const { balNewo: balNewoBefore, balWETH: balWETHBefore } = await checkBalances(addr1)
+
+            // clain the rewards
+            await lockRewards.connect(addr1).claimReward()
+
+            const { balNewo: balNewoAfter, balWETH: balWETHAfter } = await checkBalances(addr1)
+
+            expect((balNewoAfter as BigNumber).sub(balNewoBefore)).to.be.equal((newoToRewards as BigNumber).mul(3))
+            expect((balWETHAfter as BigNumber).sub(balWETHBefore)).to.be.equal((WethToReward as BigNumber).mul(3))
+        })
+    })
+
     describe("Testing withdraw", async () => {        
         before(initialize);
     })
