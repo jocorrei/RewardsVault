@@ -263,6 +263,9 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
         uint256 reward2,
         uint256 epochDurationInDays
     ) external onlyOwner updateEpoch {
+        if (nextUnsetEpoch - currentEpoch > maxEpochs)
+            revert EpochMaxReached(maxEpochs);
+
         uint256[2] memory rewards = [reward1, reward2];
 
         for (uint256 i = 0; i < 2; i++) {
@@ -325,9 +328,13 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
     
     /* ========== INTERNAL FUNCTIONS ========== */
     
-    function _withdraw(
-        uint256 amount
-    ) internal {
+    /**
+     *  @notice Implements internal withdraw logic
+     *  @dev The withdraw is always done in name 
+     * of caller for caller
+     *  @param amount: amount of tokens to withdraw
+     */
+    function _withdraw(uint256 amount) internal {
         if (amount <= 0 || accounts[msg.sender].balance < amount) revert InsufficientAmount();
         if (accounts[msg.sender].lockEpochs > 0 && enforceTime) revert FundsInLockPeriod(accounts[msg.sender].balance);
 
@@ -337,6 +344,13 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
         emit Withdrawn(msg.sender, amount);
     }
 
+    /**
+     *  @notice Implements internal claim rewards logic
+     *  @dev The claim is always done in name 
+     * of caller for caller
+     *  @return amount of rewards transfer in token 1
+     *  @return amount of rewards transfer in token 2
+     */
     function _claim() internal returns(uint256, uint256) {
         uint256 reward1 = accounts[msg.sender].rewards1;
         uint256 reward2 = accounts[msg.sender].rewards2;
@@ -354,6 +368,10 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
         return (reward1, reward2);
     }
     
+    /**
+     *  @notice Implements internal getAccount logic
+     *  @param owner: address to check information§
+     */
     function _getAccount(
         address owner
     ) internal view returns (
@@ -372,6 +390,10 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
         );
     }
     
+    /**
+     *  @notice Implements internal getEpoch logic
+     *  @param epochId: the number of the epoch
+     */
     function _getEpoch(uint256 epochId) internal view returns (
         uint256 start,
         uint256 finish,

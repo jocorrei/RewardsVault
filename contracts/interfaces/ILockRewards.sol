@@ -41,6 +41,7 @@ interface ILockRewards {
     error InsufficientFundsForRewards(address token, uint256 available, uint256 rewardAmount);
     error LockEpochsMax(uint256 maxEpochs);
     error NotWhitelisted();
+    error EpochMaxReached(uint256 maxEpochs);
     
     // Structs
     struct Account {
