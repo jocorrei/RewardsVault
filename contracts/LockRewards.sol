@@ -462,8 +462,9 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
     modifier updateEpoch {
         uint256 current = currentEpoch;
 
-        if (epochs[current].finish <= block.timestamp && epochs[current].isSet == true)
-            currentEpoch += 1;
+        while (epochs[current].finish <= block.timestamp && epochs[current].isSet == true)
+            current++;
+        currentEpoch = current;
         _;
     }
 
