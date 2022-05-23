@@ -293,39 +293,35 @@ describe("Rewards contract test", function () {
             ).to.be.revertedWith("InsufficientFundsForRewards")
         }),
         it("setNextEpoch should set the first epoch correctly when called by the first time", async () => {
-            // Transfering governance tokens to the contract before setting next rewards epoch
-            await newoToken
-                .connect(treasury)
-                .transfer(address(lockRewards), parseNewo(1000))
+            const newoToReward = parseNewo(10);
+            const WethToReward = parseWETH(2)
+            const durationInDays = 7
+
+            // Set first epoch rewards with 10 governace tokens, 2 WETH and for 7 days
+            await setRewards(newoToReward, WethToReward, durationInDays)            
             
-            // Transfering WETH to the contract before setting next rewards epoch
-            await WETH
-                .connect(whale)
-                .transfer(address(lockRewards), parseWETH(10))
-            
-            await lockRewards
-                .connect(owner)
-                .setNextEpoch(10, 2, 7)
-            
+            // Get first epoch info
             const epochOneInfo = await lockRewards.getEpoch(1);
-            
+        
             // epoch should last for 7 days
-            expect((epochOneInfo.finish as BigNumber).sub(epochOneInfo.start)).to.be.equal(days(7))
+            expect((epochOneInfo.finish as BigNumber).sub(epochOneInfo.start as BigNumber)).to.be.equal(days(7))
 
             // should have no tokens locked
             expect(epochOneInfo.locked).to.be.equal(0)
             
             // governance tokens rewards should be 10
-            expect(epochOneInfo.rewards1).to.be.equal(10)
+            expect(epochOneInfo.rewards1).to.be.equal(newoToReward)
 
             // WETH tokens rewards should be 2
-            expect(epochOneInfo.rewards2).to.be.equal(2)
+            expect(epochOneInfo.rewards2).to.be.equal(WethToReward)
         }),
         it("setNextEpoch should set the next epoch corretly when epoch one is already setted", async () => {
+            const newoToReward = parseNewo(100);
+            const WethToReward = parseWETH(1)
+            const durationInDays = 10
             
-            await lockRewards
-                .connect(owner)
-                .setNextEpoch(100, 1, 10)
+            // Set second epoch
+            await setRewards(newoToReward, WethToReward, durationInDays)
             
             //get info about first epoch
             const epochOneInfo = await lockRewards.getEpoch(1)
@@ -343,26 +339,19 @@ describe("Rewards contract test", function () {
             expect(epochTwoInfo.locked).to.be.equal(0)
             
             // governance tokens rewards should be 100
-            expect(epochTwoInfo.rewards1).to.be.equal(100)
+            expect(epochTwoInfo.rewards1).to.be.equal(newoToReward)
 
             // WETH tokens rewards should be 1
-            expect(epochTwoInfo.rewards2).to.be.equal(1)
+            expect(epochTwoInfo.rewards2).to.be.equal(WethToReward)
         }),
         it("should not be possible to set more epochs than the max (in this case 4)", async () => {            
             // Set third epoch
-            await lockRewards
-                .connect(owner)
-                .setNextEpoch(20, 1, 10)
-            
+            await setRewards(20, 1, 10)
             // Set forth epoch
-            await lockRewards
-                .connect(owner)
-                .setNextEpoch(20, 1, 10)
-            
-            // Set fifth epoch (this one should revert)
-            await expect(lockRewards
-                .connect(owner)
-                .setNextEpoch(20, 1, 10)
+            await setRewards(20, 1, 10)
+            // Set fifth epoch should revert
+            await expect(
+                setRewards(20, 1, 10)
             ).to.be.reverted
         })
     })
@@ -392,7 +381,7 @@ describe("Rewards contract test", function () {
             const accountInfo = await lockRewards.getAccount(address(addr1))
             expect(accountInfo.balance).to.be.equal(parseNewo(200))
         })
-        it("relocking should update epochs info (user relock for more epochs) ", async () => {
+        it("relocking should update epochs info (user relock for more epochs) and total assets managed by the vault ", async () => {
             const newoToLock = parseNewo(200)
             
             await lockRewards
@@ -416,11 +405,54 @@ describe("Rewards contract test", function () {
     
     describe("Testing rewards distribution", async () => {
         before(initialize);
+        it("user should not earn any reward until the end of the epoch", async () => {
+            const newoToRewards = parseNewo(100);
+            const WethToReward = parseWETH(2);
+            const durationInDays = 8;
+            const newoToLock = parseNewo(10);
+
+            await lockRewards.connect(addr1).deposit(newoToLock, 1);
+            
+            const {balNewo: balNewoBefore, balWETH: balWETHBefore} = await checkBalances(addr1)
+
+            await setRewards(newoToRewards, WethToReward, durationInDays);
+
+            await timeTravel(days(2))
+            
+            await lockRewards.connect(addr1).claimReward()
+
+            const {balNewo: balNewoAfter, balWETH: balWETHAfter} = await checkBalances(addr1)
+            
+            // check if user earned zero rewards
+            expect(balNewoBefore).to.be.equal(balNewoAfter)
+            expect(balWETHBefore).to.be.equal(balWETHAfter)
+        })
     })
     
     describe("Testing withdraw", async () => {        
         before(initialize);
     })
+
+     /**
+     * This function will set the next rewards epoch
+    */
+    async function setRewards(amountNewo: BigNumberish, amountWETH: BigNumberish, durationInDays: number){
+        
+        // Transfering governance tokens to the contract before setting next rewards epoch
+        await newoToken
+            .connect(treasury)
+            .transfer(address(lockRewards), amountNewo)
+    
+        // Transfering WETH to the contract before setting next rewards epoch
+        await WETH
+            .connect(whale)
+            .transfer(address(lockRewards), amountWETH)
+        
+        // Set next rewards epoch
+        await lockRewards
+            .connect(owner)
+            .setNextEpoch(amountNewo, amountWETH, durationInDays)
+    }
 
     /**
      * This function will check the balance of Newo and WETH

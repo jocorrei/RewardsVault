@@ -274,7 +274,7 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
         uint256 reward2,
         uint256 epochDurationInDays
     ) external onlyOwner updateEpoch {
-        if (nextUnsetEpoch - currentEpoch > maxEpochs)
+        if (nextUnsetEpoch - currentEpoch >= maxEpochs)
             revert EpochMaxReached(maxEpochs);
 
         uint256[2] memory rewards = [reward1, reward2];
