@@ -477,6 +477,8 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
             limit = current;
 
         for (uint256 i = lastEpochPaid; i < limit; i++) {
+            if (epochs[i].totalLocked == 0) continue;
+
             uint256 share = epochs[i].balanceLocked[owner] * 1e18 / epochs[i].totalLocked;
 
             uint256 rewardPaid1 = share * epochs[i].rewards1 / 1e18;
