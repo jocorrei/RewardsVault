@@ -578,6 +578,7 @@ describe("Rewards contract test", function () {
             const wEthEarnedAddr1 = (balWETHAddr1After as BigNumber).sub(balWETHAddr1Before)
             const wEthEarnedAddr2 = (balWETHAddr2After as BigNumber).sub(balWETHAddr2Before)
 
+            // addr1 should have earned double of rewards than addr1
             expect((newoEarnedAddr1 as BigNumber).div(newoEarnedAddr2)).to.be.equal(2);
             expect((wEthEarnedAddr1 as BigNumber).div(wEthEarnedAddr2)).to.be.equal(2);
         })
@@ -664,8 +665,13 @@ describe("Rewards contract test", function () {
             await lockRewards.connect(addr1).exit()
 
             const { balNewo: balNewoAfter, balWETH: balWETHAfter} = await checkBalances(addr1);
+            
+            expect(await lockRewards.totalLocked()).to.be.equal(0)
 
+            // address should have earned his newo locked plus newo rewards
             expect((balNewoAfter as BigNumber).sub(balNewoBefore)).to.be.equal((newoToLock as BigNumber).add(newoToRewards))
+
+            //address should have earned all WETH rewards
             expect((balWETHAfter as BigNumber).sub(balWETHBefore)).to.be.equal(WethToReward)
         })
     })
