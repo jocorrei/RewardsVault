@@ -22,7 +22,7 @@ import {
 
 /** 
  * Since we are forking mainNet,
- * we need the addresses that we are going to interact with 
+ * we need the addresses that we are going to interact with
  */
 
 const newoTokenAddress = "0x98585dFc8d9e7D48F0b1aE47ce33332CF4237D96";
@@ -439,6 +439,8 @@ describe("Rewards contract test", function () {
         it("user should earn right amount of rewards if epoch is over(addr1 is the only user locked so it should earn all the rewards)", async () => {
             const newoToRewards = parseNewo(50);
             const WethToReward = parseWETH(1);
+            
+            // time trival after the end of first epoch
             await timeTravel(days(8))
             
             const { balNewo: balNewoBefore, balWETH: balWETHBefore } = await checkBalances(addr1)
@@ -528,8 +530,144 @@ describe("Rewards contract test", function () {
         })
     })
 
-    describe("Testing withdraw", async () => {        
+    describe("Testing rewards distribution (third run)", () => {
         before(initialize);
+        it("users should earn rewards based on the amount of tokens they locked", async () => {
+            const newoToLock = parseNewo(500);
+            const newoToRewards = parseNewo(100);
+            const WethToReward = parseWETH(2);
+            const durationInDays = 10;
+
+            // Send 1000 newo to addr2 so it can lock
+            await newoToken
+                .connect(treasury)
+                .transfer(address(addr2), newoToLock);
+            
+            // addr2 lock for one epoch   
+            await lockRewards
+                .connect(addr2)
+                .deposit(newoToLock, 1)
+            
+            // addr1 lock double of the amount of tokens than addr2 for the same epoch
+            await lockRewards
+                .connect(addr1)
+                .deposit((newoToLock as BigNumber).mul(2), 1)
+
+            // set first epoch
+            await setRewards(newoToRewards, WethToReward, durationInDays)
+
+            // time travel to the end of first epoch
+            await timeTravel(days(11));
+
+            // Check balances for both addresses before claim
+            const {balNewo : balNewoAddr1Before, balWETH: balWETHAddr1Before } = await checkBalances(addr1);
+            const {balNewo : balNewoAddr2Before, balWETH: balWETHAddr2Before } = await checkBalances(addr2);
+
+            // addr1 claim rewards
+            await lockRewards.connect(addr1).claimReward();
+
+            //addr2 claim rewards
+            await lockRewards.connect(addr2).claimReward();
+
+            // Check balances for both addresses after claim
+            const {balNewo : balNewoAddr1After, balWETH: balWETHAddr1After } = await checkBalances(addr1);
+            const {balNewo : balNewoAddr2After, balWETH: balWETHAddr2After } = await checkBalances(addr2);
+
+            const newoEarnedAddr1 = (balNewoAddr1After as BigNumber).sub(balNewoAddr1Before)
+            const newoEarnedAddr2 = (balNewoAddr2After as BigNumber).sub(balNewoAddr2Before)
+            const wEthEarnedAddr1 = (balWETHAddr1After as BigNumber).sub(balWETHAddr1Before)
+            const wEthEarnedAddr2 = (balWETHAddr2After as BigNumber).sub(balWETHAddr2Before)
+
+            expect((newoEarnedAddr1 as BigNumber).div(newoEarnedAddr2)).to.be.equal(2);
+            expect((wEthEarnedAddr1 as BigNumber).div(wEthEarnedAddr2)).to.be.equal(2);
+        })
+    })
+
+    describe("Testing withdraw", () => {        
+        before(initialize);
+        it("user shouldnt be able to withdraw more than its balance", async () => {
+            const newoToLock = parseNewo(500);
+            const newoToRewards = parseNewo(100);
+            const WethToReward = parseWETH(2);
+            const durationInDays = 10;
+            
+            // addr1 lock for one epoch   
+            await lockRewards
+                .connect(addr1)
+                .deposit(newoToLock, 1)
+
+            // set first epoch
+            await setRewards(newoToRewards, WethToReward, durationInDays)
+
+            // user try to claim more than its balance
+            await expect(lockRewards
+                .connect(addr1)
+                .withdraw((newoToLock as BigNumber).add(1))
+            ).to.be.revertedWith("InsufficientAmount")
+        })
+        it("user shouldnt be able to withdraw during locking period(in this case one epoch)", async () => {
+            const newoToLock = parseNewo(500);
+            // time travel to some point during first epoch
+            await timeTravel(days(2));
+            
+            await expect(lockRewards
+                .connect(addr1)
+                .withdraw(newoToLock)
+            ).to.be.revertedWith("FundsInLockPeriod")
+        })
+        it("user should be able to withdraw after locking period", async () => {
+            const newoToLock = parseNewo(500);
+            // time travel to some point after first epoch
+            await timeTravel(days(11));
+
+            const { balNewo: balNewoBefore } = await checkBalances(addr1);
+
+            await lockRewards.connect(addr1).withdraw(newoToLock);
+
+            const { balNewo: balNewoAfter } = await checkBalances(addr1);
+
+            expect((balNewoAfter as BigNumber).sub(balNewoBefore)).to.be.equal(newoToLock);
+        })
+        it("withdraw should update totalAssets managed by the vault and userInfo", async () => {
+            expect(await lockRewards.totalLocked()).to.be.equal(0)
+            
+            const userInfo = await lockRewards.getAccount(address(addr1))
+            
+            expect(userInfo.balance).to.be.equal(0);
+            expect(userInfo.lockEpochs).to.be.equal(0);
+            expect(userInfo.rewards1).to.be.equal(parseNewo(100));
+            expect(userInfo.rewards2).to.be.equal(parseWETH(2));
+        })
+    })
+
+    describe("Testing exit", () => {
+        before(initialize);
+        it("exit function should withdraw and claim everything to user", async () => {
+            const newoToLock = parseNewo(500);
+            const newoToRewards = parseNewo(100);
+            const WethToReward = parseWETH(2);
+            const durationInDays = 10;
+            
+            // addr1 lock for one epoch   
+            await lockRewards
+                .connect(addr1)
+                .deposit(newoToLock, 1)
+
+            // set first epoch
+            await setRewards(newoToRewards, WethToReward, durationInDays)
+
+            // time trave to the end of first epoch
+            await timeTravel(days(12));
+
+            const { balNewo: balNewoBefore, balWETH: balWETHBefore} = await checkBalances(addr1);
+            
+            await lockRewards.connect(addr1).exit()
+
+            const { balNewo: balNewoAfter, balWETH: balWETHAfter} = await checkBalances(addr1);
+
+            expect((balNewoAfter as BigNumber).sub(balNewoBefore)).to.be.equal((newoToLock as BigNumber).add(newoToRewards))
+            expect((balWETHAfter as BigNumber).sub(balWETHBefore)).to.be.equal(WethToReward)
+        })
     })
 
      /**

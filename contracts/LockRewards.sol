@@ -248,7 +248,7 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
      *  @notice User withdraw all its funds and receive all available rewards 
      *  @dev If user funds it's still locked, all transaction will revert
      */
-    function exit() external returns(uint256, uint256) {
+    function exit() external nonReentrant updateEpoch updateReward(msg.sender) returns(uint256, uint256) {
         _withdraw(accounts[msg.sender].balance);
         return _claim();
     }
