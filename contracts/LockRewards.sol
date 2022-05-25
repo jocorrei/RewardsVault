@@ -254,10 +254,35 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
     }
 
     /* ========== RESTRICTED FUNCTIONS ========== */
+    
+    /**
+     *  @notice Set a new epoch. The amount needed of tokens
+     * should be transfered before calling setNextEpoch. Can only
+     * have 2 epochs set, the on going one and the next.
+     *  @dev Can set a start epoch different from now when there's
+     * no epoch on going. If there's an epoch on going, can
+     * only set the start after the finish of current epoch.
+     *  @param reward1: the amount of rewards to be distributed
+     * in token 1 for this epoch
+     *  @param reward2: the amount of rewards to be distributed
+     * in token 2 for this epoch
+     *  @param epochDurationInDays: how long the epoch will last
+     * in days
+     *  @param epochStart: the epoch start date in unix epoch (seconds) 
+     */
+    function setNextEpoch(
+        uint256 reward1,
+        uint256 reward2,
+        uint256 epochDurationInDays,
+        uint256 epochStart
+    ) external onlyOwner updateEpoch {
+        _setEpoch(reward1, reward2, epochDurationInDays, epochStart);
+    }
 
     /**
      *  @notice Set a new epoch. The amount needed of tokens
-     * should be transfered before calling setNextEpoch. 
+     * should be transfered before calling setNextEpoch. Can only
+     * have 2 epochs set, the on going one and the next.
      *  @dev If epoch is finished and there isn't a new to start,
      * the contract will hold. But in that case, when the next 
      * epoch is set it'll already start (meaning: start will be
@@ -267,49 +292,20 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
      *  @param reward2: the amount of rewards to be distributed
      * in token 2 for this epoch
      *  @param epochDurationInDays: how long the epoch will last
-     * in days as the same suggests.
+     * in days
      */
     function setNextEpoch(
         uint256 reward1,
         uint256 reward2,
         uint256 epochDurationInDays
     ) external onlyOwner updateEpoch {
-        if (nextUnsetEpoch - currentEpoch >= maxEpochs)
-            revert EpochMaxReached(maxEpochs);
-
-        uint256[2] memory rewards = [reward1, reward2];
-
-        for (uint256 i = 0; i < 2; i++) {
-            uint256 unclaimed = rewardToken[i].rewards - rewardToken[i].rewardsPaid;
-            uint256 balance = IERC20(rewardToken[i].addr).balanceOf(address(this));
-            
-            if (balance - unclaimed < rewards[i])
-                revert InsufficientFundsForRewards(rewardToken[i].addr, balance - unclaimed, rewards[i]);
-            
-            rewardToken[i].rewards += rewards[i];
-        }
-        
-        uint256 next = nextUnsetEpoch;
-        
-        if (currentEpoch == next) {
-            epochs[next].start = block.timestamp;
-        } else {
-            epochs[next].start = epochs[next - 1].finish + 1;
-        }
-        epochs[next].finish = epochs[next].start + (epochDurationInDays * 86400); // Seconds in a day
-
-        epochs[next].rewards1 = reward1;
-        epochs[next].rewards2 = reward2;
-        epochs[next].isSet = true;
-        
-        nextUnsetEpoch += 1;
-        emit SetNextReward(next, reward1, reward2, epochs[next].start, epochs[next].finish);
+        _setEpoch(reward1, reward2, epochDurationInDays, block.timestamp);
     }
     
     /**
      *  @notice To recover ERC20 sent by accident.
      * All funds are only transfered to contract owner.
-     *  @dev To allow a withdraw, first the token must be whilisted
+     *  @dev To allow a withdraw, first the token must be whitelisted
      *  @param tokenAddress: token to transfer funds
      *  @param tokenAmount: the amount to transfer to owner
      */
@@ -340,7 +336,7 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
     }
 
     /**
-     *  @notice Allows recover for NFTs as well 
+     *  @notice Allows recover for NFTs 
      */
     function recoverERC721(address tokenAddress, uint256 tokenId) external onlyOwner {
         IERC721(tokenAddress).transferFrom(address(this), owner(), tokenId);
@@ -372,6 +368,59 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
     }
     
     /* ========== INTERNAL FUNCTIONS ========== */
+    
+    /**
+     *  @notice Implements internal setEpoch logic
+     *  @dev Can only set 2 epochs, the on going and
+     * the next one. This has to be done in 2 different
+     * transactions.
+     *  @param reward1: the amount of rewards to be distributed
+     * in token 1 for this epoch
+     *  @param reward2: the amount of rewards to be distributed
+     * in token 2 for this epoch
+     *  @param epochDurationInDays: how long the epoch will last
+     * in days
+     *  @param epochStart: the epoch start date in unix epoch (seconds) 
+     */
+    function _setEpoch(
+        uint256 reward1,
+        uint256 reward2,
+        uint256 epochDurationInDays,
+        uint256 epochStart
+    ) internal {
+        if (nextUnsetEpoch - currentEpoch > 1)
+            revert EpochMaxReached(2);
+        if (epochStart < block.timestamp)
+            revert EpochStartInvalid(epochStart, block.timestamp);
+
+        uint256[2] memory rewards = [reward1, reward2];
+
+        for (uint256 i = 0; i < 2; i++) {
+            uint256 unclaimed = rewardToken[i].rewards - rewardToken[i].rewardsPaid;
+            uint256 balance = IERC20(rewardToken[i].addr).balanceOf(address(this));
+            
+            if (balance - unclaimed < rewards[i])
+                revert InsufficientFundsForRewards(rewardToken[i].addr, balance - unclaimed, rewards[i]);
+            
+            rewardToken[i].rewards += rewards[i];
+        }
+        
+        uint256 next = nextUnsetEpoch;
+        
+        if (currentEpoch == next || epochStart > epochs[next - 1].finish + 1) {
+            epochs[next].start = epochStart;
+        } else {
+            epochs[next].start = epochs[next - 1].finish + 1;
+        }
+        epochs[next].finish = epochs[next].start + (epochDurationInDays * 86400); // Seconds in a day
+
+        epochs[next].rewards1 = reward1;
+        epochs[next].rewards2 = reward2;
+        epochs[next].isSet = true;
+        
+        nextUnsetEpoch += 1;
+        emit SetNextReward(next, reward1, reward2, epochs[next].start, epochs[next].finish);
+    }
     
     /**
      *  @notice Implements internal withdraw logic

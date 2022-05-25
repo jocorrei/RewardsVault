@@ -42,6 +42,7 @@ interface ILockRewards {
     error LockEpochsMax(uint256 maxEpochs);
     error NotWhitelisted();
     error EpochMaxReached(uint256 maxEpochs);
+    error EpochStartInvalid(uint256 epochStart, uint256 now);
     
     // Structs
     struct Account {
