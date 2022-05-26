@@ -6,8 +6,11 @@ This contract will be responsible for distributing rewards on governance tokens 
 
 # How to run:
 
-to install all dependencies <br>
+Install all dependencies: <br>
 `npm install` 
 
-`npx hardhat `
+Run an ethereum fork node: <br>
+`npx hardhat npx hardhat node --fork https://eth-mainnet.alchemyapi.io/v2/<INSERT YOUR ALCHEMY KEY HERE>`
 
+On another terminal deploy the contract: <br>
+`npx hardhat test --network localhost`
