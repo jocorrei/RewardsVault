@@ -231,7 +231,7 @@ describe("Rewards contract test", function () {
             // Set first epoch (set first epoch rewards with 1000 governance tokens, 10 WETH for 7 days)
             await lockRewards
                 .connect(owner)
-                .setNextEpoch(newoReward, wethReward, 7)
+                ["setNextEpoch(uint256,uint256,uint256)"](newoReward, wethReward, 7)
 
             const currentEpochInfo = await lockRewards.getCurrentEpoch()
             
@@ -290,13 +290,13 @@ describe("Rewards contract test", function () {
         it("SetNextEpoch should be only callable by owner", async () => {
             await expect(lockRewards
                 .connect(addr1)
-                .setNextEpoch(1000, 1000, 7)
+                ["setNextEpoch(uint256,uint256,uint256)"](1000, 1000, 7)
             ).to.be.reverted
         }),
         it("SetNextEpoch should revert if there is not enought balance on the contract", async () => {
             await expect(lockRewards
                 .connect(owner)
-                .setNextEpoch(1000, 1000, 7)
+                ["setNextEpoch(uint256,uint256,uint256)"](1000, 1000, 7)
             ).to.be.revertedWith("InsufficientFundsForRewards")
         }),
         it("setNextEpoch should set the first epoch correctly when called by the first time", async () => {
@@ -351,15 +351,11 @@ describe("Rewards contract test", function () {
             // WETH tokens rewards should be 1
             expect(epochTwoInfo.rewards2).to.be.equal(WethToReward)
         }),
-        it("should not be possible to set more epochs than the max (in this case 4)", async () => {            
-            // Set third epoch
-            await setRewards(20, 1, 10)
-            // Set forth epoch
-            await setRewards(20, 1, 10)
-            // Set fifth epoch should revert
+        it("should not be possible to set more epochs than two epochs at a time", async () => {            
+            // Set third epoch should revert
             await expect(
                 setRewards(20, 1, 10)
-            ).to.be.reverted
+            ).to.be.revertedWith("EpochMaxReached")
         })
     })
 
@@ -512,6 +508,9 @@ describe("Rewards contract test", function () {
             await setRewards(newoToRewards, WethToReward, durationInDays)
             // set second epoch
             await setRewards(newoToRewards, WethToReward, durationInDays)
+
+            await timeTravel(days(11))
+    
             // set third epoch
             await setRewards(newoToRewards, WethToReward, durationInDays)
         
@@ -694,7 +693,7 @@ describe("Rewards contract test", function () {
         // Set next rewards epoch
         await lockRewards
             .connect(owner)
-            .setNextEpoch(amountNewo, amountWETH, durationInDays)
+            ["setNextEpoch(uint256,uint256,uint256)"](amountNewo, amountWETH, durationInDays)
     }
 
     /**
@@ -703,18 +702,18 @@ describe("Rewards contract test", function () {
     async function checkBalances(signer: Signer) {
         const balNewo = await balanceNewo(signer);
         const balWETH = await balanceWETH(signer);
-        console.log("\tBalance report:");
+        // console.log("\tBalance report:");
         
-        console.log(
-            `\tbalance of newo of ${address(signer)}: ${formatNewo(
-                balNewo
-            )}`
-        );
-        console.log(
-            `\tbalance of WETH of ${address(signer)}: ${formatWETH(
-                balWETH
-            )}\n`
-        );
+        // console.log(
+        //     `\tbalance of newo of ${address(signer)}: ${formatNewo(
+        //         balNewo
+        //     )}`
+        // );
+        // console.log(
+        //     `\tbalance of WETH of ${address(signer)}: ${formatWETH(
+        //         balWETH
+        //     )}\n`
+        // );
         return { balNewo, balWETH };
     }
 });
