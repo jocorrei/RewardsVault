@@ -6,6 +6,8 @@ This contract will be responsible for distributing rewards on governance tokens 
 
 # How to run:
 
-Install dependencies
-`npm install`
+to install all dependencies <br>
+`npm install` 
+
+`npx hardhat `
 
