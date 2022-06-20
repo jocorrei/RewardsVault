@@ -525,6 +525,13 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
         uint256 current = currentEpoch;
         uint256 lockEpochs = accounts[owner].lockEpochs;
         uint256 lastEpochPaid = accounts[owner].lastEpochPaid;
+        
+        // Solve edge case for first epoch
+        // since epochs starts on value 1
+        if (lastEpochPaid == 0) {
+            accounts[owner].lastEpochPaid = 1;
+            ++lastEpochPaid;
+        }
 
         uint256 rewardPaid1 = 0;
         uint256 rewardPaid2 = 0;
@@ -535,7 +542,10 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
             limit = current;
 
         for (uint256 i = lastEpochPaid; i < limit;) {
-            if (epochs[i].totalLocked == 0) continue;
+            if (epochs[i].totalLocked == 0) {
+                unchecked { ++i; }
+                continue;
+            }
 
             uint256 share = epochs[i].balanceLocked[owner] * 1e18 / epochs[i].totalLocked;
 
