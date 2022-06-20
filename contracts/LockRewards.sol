@@ -221,9 +221,11 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
         // Since all funds will be locked for the same period
         // Update all lock epochs for this new value
         uint256 newBalance = accounts[msg.sender].balance;
-        for (uint256 i = 0; i < lockEpochs; i++) {
+        for (uint256 i = 0; i < lockEpochs;) {
             epochs[i + next].totalLocked += newBalance - epochs[i + next].balanceLocked[msg.sender];
             epochs[i + next].balanceLocked[msg.sender] = newBalance;
+
+            unchecked { ++i; }
         }
     }
 
@@ -395,7 +397,7 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
 
         uint256[2] memory rewards = [reward1, reward2];
 
-        for (uint256 i = 0; i < 2; i++) {
+        for (uint256 i = 0; i < 2;) {
             uint256 unclaimed = rewardToken[i].rewards - rewardToken[i].rewardsPaid;
             uint256 balance = IERC20(rewardToken[i].addr).balanceOf(address(this));
             
@@ -403,6 +405,8 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
                 revert InsufficientFundsForRewards(rewardToken[i].addr, balance - unclaimed, rewards[i]);
             
             rewardToken[i].rewards += rewards[i];
+
+            unchecked { ++i; }
         }
         
         uint256 next = nextUnsetEpoch;
@@ -429,7 +433,7 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
      *  @param amount: amount of tokens to withdraw
      */
     function _withdraw(uint256 amount) internal {
-        if (amount <= 0 || accounts[msg.sender].balance < amount) revert InsufficientAmount();
+        if (amount == 0 || accounts[msg.sender].balance < amount) revert InsufficientAmount();
         if (accounts[msg.sender].lockEpochs > 0 && enforceTime) revert FundsInLockPeriod(accounts[msg.sender].balance);
 
         IERC20(lockToken).safeTransfer(msg.sender, amount);
@@ -522,26 +526,32 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
         uint256 lockEpochs = accounts[owner].lockEpochs;
         uint256 lastEpochPaid = accounts[owner].lastEpochPaid;
 
+        uint256 rewardPaid1 = 0;
+        uint256 rewardPaid2 = 0;
+        uint256 locks = 0;
+
         uint256 limit = lastEpochPaid + lockEpochs; 
         if (limit > current)
             limit = current;
 
-        for (uint256 i = lastEpochPaid; i < limit; i++) {
+        for (uint256 i = lastEpochPaid; i < limit;) {
             if (epochs[i].totalLocked == 0) continue;
 
             uint256 share = epochs[i].balanceLocked[owner] * 1e18 / epochs[i].totalLocked;
 
-            uint256 rewardPaid1 = share * epochs[i].rewards1 / 1e18;
-            uint256 rewardPaid2 = share * epochs[i].rewards2 / 1e18;
-
-            rewardToken[0].rewardsPaid += rewardPaid1;
-            rewardToken[1].rewardsPaid += rewardPaid2;
-
-            accounts[owner].rewards1 += rewardPaid1;
-            accounts[owner].rewards2 += rewardPaid2;
+            rewardPaid1 += share * epochs[i].rewards1 / 1e18;
+            rewardPaid2 += share * epochs[i].rewards2 / 1e18;
             
-            accounts[owner].lockEpochs -= 1;
+            unchecked { ++locks; ++i; }
         }
+        rewardToken[0].rewardsPaid += rewardPaid1;
+        rewardToken[1].rewardsPaid += rewardPaid2;
+
+        accounts[owner].rewards1 += rewardPaid1;
+        accounts[owner].rewards2 += rewardPaid2;
+        
+        accounts[owner].lockEpochs -= locks;
+
         if (lastEpochPaid != current)
             accounts[owner].lastEpochPaid = current;
         _;
