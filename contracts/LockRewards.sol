@@ -191,20 +191,8 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
         if (lockEpochs > maxEpochs) revert LockEpochsMax(maxEpochs);
         IERC20 lToken = IERC20(lockToken);
 
-        // Check if current epoch is in course
-        // Then, set the deposit for the upcoming ones
-        uint256 next = currentEpoch;
-        if (epochs[next].isSet)
-            next += 1;
-        
-        // In case of a relock, set the lockEpochs to the
-        // biggest number of epochs. Starting for the next
-        // possible epoch.
-        if (accounts[msg.sender].lockEpochs < lockEpochs) {
-            accounts[msg.sender].lockEpochs = lockEpochs;
-        } else {
-            lockEpochs = accounts[msg.sender].lockEpochs;
-        }
+        // Increase lockEpochs for user
+        accounts[msg.sender].lockEpochs += lockEpochs;
         
         // This is done to save gas in case of a relock
         // Also, emits a different event for deposit or relock
@@ -213,10 +201,15 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
             totalAssets += amount;
             accounts[msg.sender].balance += amount;
         
-            emit Deposit(msg.sender, amount, accounts[msg.sender].lockEpochs);
+            emit Deposit(msg.sender, amount, lockEpochs);
         } else {
-            emit Relock(msg.sender, accounts[msg.sender].balance, accounts[msg.sender].lockEpochs);
+            emit Relock(msg.sender, accounts[msg.sender].balance, lockEpochs);
         }
+        
+        // Check if current epoch is in course
+        // Then, set the deposit for the upcoming ones
+        uint256 _currEpoch = currentEpoch; 
+        uint256 next = epochs[_currEpoch].isSet ? _currEpoch + 1 : _currEpoch;
         
         // Since all funds will be locked for the same period
         // Update all lock epochs for this new value
