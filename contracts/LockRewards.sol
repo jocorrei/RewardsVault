@@ -4,6 +4,7 @@ pragma solidity ^0.8.15;
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/security/Pausable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 import "./interfaces/ILockRewards.sol";
@@ -23,7 +24,7 @@ import "./interfaces/ILockRewards.sol";
  * by the Ownable contract. The contract deployer is the owner at 
  * start.
  */
-contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
+contract LockRewards is ILockRewards, ReentrancyGuard, Ownable, Pausable {
     using SafeERC20 for IERC20;
 
     /// @dev Account hold all user information 
@@ -178,11 +179,17 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable {
     }
 
     /**
-     *  @notice Deposit tokens to receive rewards
-     *  @dev Allows relocking by setting amount to zero
+     *  @notice Deposit tokens to receive rewards.
+     * In case of a relock, it will increase the total locked epochs
+     * for the total amount of tokens deposited. The contract doesn't
+     * allow different unlock periods for same address. Also, all
+     * deposits will grant rewards for the next epoch, not the
+     * current one if setted by the owner.
+     *  @dev Allows relocking by setting amount to zero.
+     * To increase amount locked without increasing
+     * epochs locked, set lockEpochs to zero.
      *  @param amount: the amount of lock tokens to deposit
-     *  @param lockEpochs: how many epochs to lock tokens,
-     * value must be less than maxEpochs 
+     *  @param lockEpochs: how many epochs funds will be locked.
      */
     function deposit(
         uint256 amount,
