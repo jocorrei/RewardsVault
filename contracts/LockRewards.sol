@@ -219,9 +219,10 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable, Pausable {
         uint256 next = epochs[_currEpoch].isSet ? _currEpoch + 1 : _currEpoch;
         
         // Since all funds will be locked for the same period
-        // Update all lock epochs for this new value
+        // Update all future lock epochs for this new value
         uint256 newBalance = accounts[msg.sender].balance;
-        for (uint256 i = 0; i < lockEpochs;) {
+        uint256 lockBoundary = epochs[_currEpoch].balanceLocked[msg.sender] == 0 ? accounts[msg.sender].lockEpochs : accounts[msg.sender].lockEpochs - 1;
+        for (uint256 i = 0; i < lockBoundary;) {
             epochs[i + next].totalLocked += newBalance - epochs[i + next].balanceLocked[msg.sender];
             epochs[i + next].balanceLocked[msg.sender] = newBalance;
 
