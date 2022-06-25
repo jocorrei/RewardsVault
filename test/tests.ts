@@ -20,10 +20,10 @@ import {
     formatToken,
 } from "./utils";
 
-/** 
- * Since we are forking mainNet,
- * we need the addresses that we are going to interact with
- */
+/**
+* Since we are forking mainNet,
+* we need the addresses that we are going to interact with
+*/
 
 const newoTokenAddress = "0x98585dFc8d9e7D48F0b1aE47ce33332CF4237D96";
 const TreasuryAddress = "0xdb36b23964FAB32dCa717c99D6AEFC9FB5748f3a";
@@ -166,8 +166,6 @@ describe("Rewards contract test", function () {
     describe("Testing constructor", async () => {        
         before(initialize);
         it("onwer should be the deployer", async () => {
-            const test = parseNewo(15000);
-            console.log("\n\n im here dude!!\n\n", test, days(30));
             expect(await lockRewards.owner()).to.be.equal(address(owner))
         }),
         it("rewards token 0 should be NewO token ", async () => {
@@ -293,7 +291,7 @@ describe("Rewards contract test", function () {
             await expect(lockRewards
                 .connect(addr1)
                 ["setNextEpoch(uint256,uint256,uint256)"](1000, 1000, 7)
-            ).to.be.reverted
+            ).to.be.revertedWith("Ownable: caller is not the owner")
         }),
         it("SetNextEpoch should revert if there is not enought balance on the contract", async () => {
             await expect(lockRewards
@@ -736,10 +734,12 @@ describe("Rewards contract test", function () {
         it("user should be able to withdraw everything when second epoch end", async () => {
             const newoToWithdraw = parseNewo(1000);
             
+            // time travel to third epoch
             await timeTravel(days(11))
             
             const { balNewo: balNewoBefore } = await checkBalances(addr1);
 
+            // address withdraw all its balance
             await lockRewards
                 .connect(addr1)
                 .withdraw(newoToWithdraw)
@@ -748,6 +748,67 @@ describe("Rewards contract test", function () {
 
             expect((balNewoAfter as BigNumber).sub(balNewoBefore)).to.be.equal(newoToWithdraw)
 
+        })
+    })
+    
+    describe("Testing pause functionality", () => {
+        before(initialize);
+        it("Pause should only be callable by owner", async () => {
+            await expect(lockRewards
+                .connect(addr1)
+                .pause()
+            ).to.be.revertedWith("Ownable: caller is not the owner")
+        })
+        it("Unpause should revert if contract is not paused", async () => {
+            await expect(lockRewards
+                .connect(owner)
+                .unpause()
+            ).to.be.revertedWith("Pausable: not paused")
+        })
+        it("pause() should set contract to pause mode. deposit, withdraw and claim should revert", async () => {
+            await lockRewards
+                .connect(owner)
+                .pause()
+            
+            const paused = await lockRewards.connect(addr1).paused()
+
+            expect(paused).to.be.equal(true)
+            
+            await expect(lockRewards
+                .connect(addr1)
+                .deposit(parseNewo(10), 1)
+            ).to.be.revertedWith("Pausable: paused")
+
+            await expect(lockRewards
+                .connect(addr1)
+                .withdraw(parseNewo(10))
+            ).to.be.revertedWith("Pausable: paused")
+
+            await expect(lockRewards
+                .connect(addr1)
+                .claimReward()
+            ).to.be.revertedWith("Pausable: paused")
+        })
+        it("Pause should revert if contract is paused", async () => {
+            await expect(lockRewards
+                .connect(owner)
+                .pause()
+            ).to.be.revertedWith("Pausable: paused")
+        })
+        it("Unpause should only be callable by owner", async () => {
+            await expect(lockRewards
+                .connect(addr1)
+                .unpause()
+            ).to.be.revertedWith("Ownable: caller is not the owner")
+        })
+        it("Unpause should set pause to false", async () => {
+            await lockRewards
+                .connect(owner)
+                .unpause()
+
+            const paused = await lockRewards.connect(addr1).paused()
+            
+            expect(paused).to.be.equal(false)
         })
     })
 

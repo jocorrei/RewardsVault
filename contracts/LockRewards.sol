@@ -168,7 +168,7 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable, Pausable {
     /**
      *  @notice Update caller account state (grant rewards if available)
      */
-    function updateAccount() external updateEpoch updateReward(msg.sender) returns (
+    function updateAccount() external whenNotPaused updateEpoch updateReward(msg.sender) returns (
         uint256 balance,
         uint256 lockEpochs,
         uint256 lastEpochPaid,
@@ -194,7 +194,7 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable, Pausable {
     function deposit(
         uint256 amount,
         uint256 lockEpochs
-    ) external nonReentrant updateEpoch updateReward(msg.sender) {
+    ) external nonReentrant whenNotPaused updateEpoch updateReward(msg.sender) {
         if (lockEpochs > maxEpochs) revert LockEpochsMax(maxEpochs);
         IERC20 lToken = IERC20(lockToken);
 
@@ -235,14 +235,14 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable, Pausable {
      */
     function withdraw(
         uint256 amount
-    ) external nonReentrant updateEpoch updateReward(msg.sender) {
+    ) external nonReentrant whenNotPaused updateEpoch updateReward(msg.sender) {
         _withdraw(amount);
     }
 
     /**
      *  @notice User can receive its claimable rewards 
      */
-    function claimReward() external nonReentrant updateEpoch updateReward(msg.sender) returns(uint256, uint256) {
+    function claimReward() external nonReentrant whenNotPaused updateEpoch updateReward(msg.sender) returns(uint256, uint256) {
         return _claim();
     }
 
@@ -250,12 +250,29 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable, Pausable {
      *  @notice User withdraw all its funds and receive all available rewards 
      *  @dev If user funds it's still locked, all transaction will revert
      */
-    function exit() external nonReentrant updateEpoch updateReward(msg.sender) returns(uint256, uint256) {
+    function exit() external nonReentrant whenNotPaused updateEpoch updateReward(msg.sender) returns(uint256, uint256) {
         _withdraw(accounts[msg.sender].balance);
         return _claim();
     }
 
     /* ========== RESTRICTED FUNCTIONS ========== */
+
+
+    /**
+     * @notice Pause contract. Can only be called by the contract owner.
+     * @dev If contract is already pause, transaction will revert
+     */
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    /**
+     * @notice Unpause contract. Can only be called by the contract owner.
+     * @dev If contract is already unpaused, transaction will revert
+     */
+    function unpause() external onlyOwner {
+        _unpause();
+    }
     
     /**
      *  @notice Set a new epoch. The amount needed of tokens
