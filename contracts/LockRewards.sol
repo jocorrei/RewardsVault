@@ -261,7 +261,7 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable, Pausable {
 
     /**
      * @notice Pause contract. Can only be called by the contract owner.
-     * @dev If contract is already pause, transaction will revert
+     * @dev If contract is already paused, transaction will revert
      */
     function pause() external onlyOwner {
         _pause();
