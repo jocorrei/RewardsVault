@@ -519,6 +519,7 @@ describe("Rewards contract test", function () {
             await lockRewards
                 .connect(addr1)
                 .deposit(newoToLock, 1);
+            
             // user relock more tokens for same one epoch
             await lockRewards
                 .connect(addr1)
@@ -545,7 +546,75 @@ describe("Rewards contract test", function () {
             // user should have earned the right amount of tokens back
             expect((balNewoAfterWithdraw as BigNumber).sub(balNewoBefore)).to.be.equal((newoToLock as BigNumber).mul(2))
         })
+    })
 
+    describe("Integrated tests 3", () => {
+        before(initialize)
+        it("User lock for one epoch and them relock for another epoch. At first epoch end it can claim right amount of rewards but can't withdraw", async () => {
+            const newoToRewards = parseNewo(50);
+            const WethToReward = parseWETH(1);
+            const durationInDays = 8;
+            const newoToLock = parseNewo(10);
+
+            // user lock for one epoch
+            await lockRewards
+                .connect(addr1)
+                .deposit(newoToLock, 1);
+
+            // set first epoch
+            await setRewards(newoToRewards, WethToReward, durationInDays);
+
+            // set second epoch
+            await setRewards(newoToRewards, WethToReward, durationInDays);
+
+            // user relock in the middle of first epoch for one more epoch
+            await lockRewards
+                .connect(addr1)
+                .deposit(newoToLock, 1);
+            
+            // time travel to the middle of second epoch   
+            await timeTravel(days(9))
+
+            // withdraw in the middle of second epoch should revert
+            await expect(lockRewards
+                .connect(addr1)
+                .withdraw(newoToLock)
+            ).to.be.revertedWith("FundsInLockPeriod");
+
+            const {balNewo : balNewoBefore, balWETH: balWETHBefore} = await checkBalances(addr1);
+
+            // user should be able to claim first epoch rewards
+            await lockRewards.connect(addr1).claimReward()
+
+            const {balNewo : balNewoAfter, balWETH: balWETHAfter } = await checkBalances(addr1);
+
+            expect((balNewoAfter as BigNumber).sub(balNewoBefore)).to.be.equal(newoToRewards)
+            expect((balWETHAfter as BigNumber).sub(balWETHBefore)).to.be.equal(WethToReward)
+        })
+        it("user should now be able to withdraw locked tokens and claim rewards from second epoch", async () => {
+            const newoToLock = parseNewo(10);
+            const WethToReward = parseWETH(1);
+            // time travel to third epoch
+            await timeTravel(days(9))
+
+            const { balNewo : balNewoBefore } = await checkBalances(addr1);
+
+            // user withdraw in the middle of third epoch
+            await lockRewards.connect(addr1).withdraw(newoToLock)
+
+            const {balNewo : balNewoAfter } = await checkBalances(addr1);
+
+            // should get back the right amount of locked tokens
+            expect((balNewoAfter as BigNumber).sub(balNewoBefore)).to.be.equal(newoToLock);
+            
+            const { balWETH : balWethBefore } = await checkBalances(addr1);
+
+            await lockRewards.connect(addr1).claimReward()
+
+            const { balWETH : balWethAfter } = await checkBalances(addr1);
+
+            expect((balWethAfter as BigNumber).sub(balWethBefore)).to.be.equal(WethToReward)
+        })
     })
     
     describe("Testing rewards distribution", async () => {
