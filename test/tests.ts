@@ -398,11 +398,13 @@ describe("Rewards contract test", function () {
             const epochOneInfo = await lockRewards.getEpoch(1)
             const epochTwoInfo = await lockRewards.getEpoch(2)
             const epochThreeInfo = await lockRewards.getEpoch(3)
+            const epochFourInfo = await lockRewards.getEpoch(4)
 
             expect(await lockRewards.totalAssets()).to.be.equal(parseNewo(400))
             expect(epochOneInfo.locked).to.be.equal(parseNewo(400))
             expect(epochTwoInfo.locked).to.be.equal(parseNewo(400))
-            expect(epochThreeInfo.locked).to.be.equal(parseNewo(0))
+            expect(epochThreeInfo.locked).to.be.equal(parseNewo(400))
+            expect(epochFourInfo.locked).to.be.equal(parseNewo(0))
             expect(accountInfo.lockEpochs).to.be.equal(3)
             expect(accountInfo.lastEpochPaid).to.be.equal(1)
         })
@@ -492,12 +494,6 @@ describe("Rewards contract test", function () {
             // time travel to the end of the third epoch
             await timeTravel(days(9))
 
-            // const testing = await lockRewards.connect(addr1).getAccount(address(addr1))
-
-            // const testing1 = await lockRewards.connect(addr1).getCurrentEpoch()
-
-            // console.log("\n\n im here testing", testing, testing1);
-
             const {balNewo : balNewoBefore } = await checkBalances(addr1);
             
             // user should be able to withdraw everything now
@@ -507,7 +503,7 @@ describe("Rewards contract test", function () {
             
             const {balNewo : balNewoAfterWithdraw } = await checkBalances(addr1);
 
-            expect((balNewoBefore as BigNumber).sub(balNewoAfterWithdraw)).to.be.equal((newoToLock as BigNumber).mul(2));
+            expect((balNewoAfterWithdraw as BigNumber).sub(balNewoBefore)).to.be.equal((newoToLock as BigNumber).mul(2));
         })
     })
 
