@@ -51,8 +51,8 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable, Pausable {
      *  @notice maxEpochs can be changed afterwards by the contract owner
      *  @dev Owner is the deployer
      *  @param _lockToken: token address which users can deposit to receive rewards
-     *  @param _rewardAddr1: token address used to pay users rewards
-     *  @param _rewardAddr2: token address used to pay users rewards
+     *  @param _rewardAddr1: token address used to pay users rewards (Governance token)
+     *  @param _rewardAddr2: token address used to pay users rewards (WETH)
      *  @param _maxEpochs: max number of epochs an user can lock its funds 
      */
     constructor(
@@ -345,7 +345,8 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable, Pausable {
     }
 
     /**
-     *  @notice  Add or remove a token from recover whitelist
+     *  @notice  Add or remove a token from recover whitelist,
+     * cannot whitelist governance token
      *  @dev Only contract owner are allowed. Emits an event
      * allowing users to perceive the changes in contract rules.
      * The contract allows to whitelist the underlying tokens
@@ -356,6 +357,7 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable, Pausable {
      *  @param flag: set true to allow recover
      */
     function changeRecoverWhitelist(address tokenAddress, bool flag) external onlyOwner {
+        if (tokenAddress == rewardToken[0].addr) revert CannotWhitelistGovernanceToken(rewardToken[0].addr);
         whitelistRecoverERC20[tokenAddress] = flag;
         emit ChangeERC20Whiltelist(tokenAddress, flag);
     }

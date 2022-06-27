@@ -41,6 +41,7 @@ interface ILockRewards {
     error InsufficientFundsForRewards(address token, uint256 available, uint256 rewardAmount);
     error LockEpochsMax(uint256 maxEpochs);
     error NotWhitelisted();
+    error CannotWhitelistGovernanceToken(address governanceToken);
     error EpochMaxReached(uint256 maxEpochs);
     error EpochStartInvalid(uint256 epochStart, uint256 now);
     
