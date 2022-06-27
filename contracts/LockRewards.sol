@@ -198,6 +198,7 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable, Pausable {
         if (lockEpochs > maxEpochs) revert LockEpochsMax(maxEpochs);
         IERC20 lToken = IERC20(lockToken);
 
+        uint256 oldLockEpochs = accounts[msg.sender].lockEpochs;
         // Increase lockEpochs for user
         accounts[msg.sender].lockEpochs += lockEpochs;
         
@@ -220,8 +221,12 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable, Pausable {
         
         // Since all funds will be locked for the same period
         // Update all future lock epochs for this new value
+        uint256 lockBoundary;
+        if (!epochs[_currEpoch].isSet || oldLockEpochs == 0)
+            lockBoundary = accounts[msg.sender].lockEpochs;
+        else 
+            lockBoundary = accounts[msg.sender].lockEpochs - 1;
         uint256 newBalance = accounts[msg.sender].balance;
-        uint256 lockBoundary = epochs[_currEpoch].balanceLocked[msg.sender] == 0 ? accounts[msg.sender].lockEpochs : accounts[msg.sender].lockEpochs - 1;
         for (uint256 i = 0; i < lockBoundary;) {
             epochs[i + next].totalLocked += newBalance - epochs[i + next].balanceLocked[msg.sender];
             epochs[i + next].balanceLocked[msg.sender] = newBalance;
@@ -560,7 +565,7 @@ contract LockRewards is ILockRewards, ReentrancyGuard, Ownable, Pausable {
             limit = current;
 
         for (uint256 i = lastEpochPaid; i < limit;) {
-            if (epochs[i].totalLocked == 0) {
+            if (epochs[i].balanceLocked[owner] == 0) {
                 unchecked { ++i; }
                 continue;
             }
